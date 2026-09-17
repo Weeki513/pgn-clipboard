@@ -1,0 +1,15 @@
+name: macOS checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test watcher and scripts
+        run: ./app/scripts/test.sh
+      - name: Build and verify signed app
+        run: ./app/scripts/build.sh

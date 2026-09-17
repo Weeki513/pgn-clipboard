@@ -1,0 +1,106 @@
+# PGN Clipboard
+
+![PGN Clipboard — download a chess game, paste its PGN](app/docs/images/banner.png)
+
+**Download a chess game. Paste its PGN.** A small macOS app that copies new PGN files to your clipboard, then moves the originals to Trash.
+
+## Get started in five steps
+
+**You need:** macOS 13 or later and Apple's free Command Line Tools (or Xcode). No paid developer account is needed.
+
+1. [Download the latest release](https://github.com/Weeki513/pgn-clipboard/releases/latest) and unzip **pgn-clipboard-source-v1.0.3.zip**. Keep the whole folder together.
+2. If you do not have Command Line Tools, run `xcode-select --install` in Terminal and finish Apple's installer.
+3. Double-click **Install.command**. It builds and opens the app. If macOS blocks the downloaded script, follow the troubleshooting note below.
+4. Select **Downloads → Watch Folder** (or another folder). Existing files are left untouched.
+5. Download a **new** PGN, wait until it has stopped changing for at least three seconds, then press **⌘V** in your destination app. The original PGN is now in Trash.
+
+Optional: enable **Launch at Login** in the controls window. To open controls again, click the menu-bar pawn or reopen **PGN Clipboard.app** in `~/Applications`.
+
+Made with love by [pivnev.design](https://www.pivnev.design/). Feedback: [hi@pivnev.design](mailto:hi@pivnev.design).
+
+### Installation notes
+
+The app builds locally for your Mac's architecture. This release contains source code, not a notarized prebuilt app. Terminal may request access to the folder containing the source. Full Disk Access is not required.
+
+If Finder blocks `Install.command`, open Terminal, type `cd `, drag the extracted folder into the window, press Return, and run `bash app/install.sh`. This runs the included source installer; read it first if you want to inspect what it does. Do not run it as root or copy the installer alone. Keep the Terminal window open to read errors.
+
+## Screenshots
+
+The running app, using a dedicated demonstration folder.
+
+![Watching a folder](app/docs/images/watching.png)
+
+![A game successfully copied and moved to Trash](app/docs/images/copied.png)
+
+## Controls
+
+Click the pawn in the menu bar to see status, choose a folder, pause/resume, retry failed files, or quit. Pause and error states have separate icons.
+
+**Cannot see the icon?** Open **PGN Clipboard.app** again. Its controls window remains available even when a crowded menu bar, display notch, or menu bar manager hides the icon. **Show Menu Bar Icon** restores an app-hidden item.
+
+The controls window and menu include clickable author and feedback links. The feedback link opens your configured email app; nothing is sent automatically.
+
+## File behavior
+
+- Only regular, non-hidden `.pgn` files directly inside the selected folder are considered. Extensions are case-insensitive; subfolders and symlinks are ignored.
+- Files present when watching starts, the app restarts, or monitoring resumes are ignored. Files downloaded while off or paused also stay untouched. Changing an existing PGN makes it eligible.
+- Size and modification time must remain unchanged for at least three seconds. This handles ordinary browser downloads and renames, but cannot prove that every downloader has finished. Pause monitoring for unusual long-running exports.
+- Supported files are UTF-8, at most 5 MiB, with `Event`, `White`, and `Black` headers and a final result token: `1-0`, `0-1`, `1/2-1/2`, or `*`. BOM and CRLF are accepted. This is conservative validation, not a full chess/PGN parser. Unsupported encodings, missing tags, or comments after the final result are left untouched.
+- The app verifies its clipboard write before requesting a native Trash operation. On copy or move failure, the source stays in place and an error appears. Use **Retry Failed Files** to retry.
+- Multiple arrivals are processed oldest first by modification time, with filename as a tie-breaker. **Only the latest processed game remains in the clipboard.** Use this primarily for one game at a time, not bulk databases.
+- Copying replaces the current clipboard; another app may change it afterward. PGN Clipboard does not store clipboard history.
+
+## Update or uninstall
+
+Double-click **Uninstall.command**, or run `bash app/uninstall.sh`. The app stops, unregisters its login item, clears its saved folder settings, and is removed. Your PGN files and clipboard are not changed. macOS may retain an empty sandbox container.
+
+To update, uninstall first, then use **Install.command** from the new package. Choose your folder and enable Launch at Login again. The installer refuses to overwrite an existing app or silently remove legacy installations.
+
+For a settings reset without deleting the app, use **Reset Access and Quit…** in the menu.
+
+## Package contents
+
+The three top-level files are the installer, uninstaller, and this README. Implementation and supporting files live under `app/`; GitHub CI configuration lives under `.github/`.
+
+- `app/Sources/`: Swift application, watcher, and menu icons.
+- `app/Resources/`: application icon, bundle metadata, and sandbox entitlements.
+- `app/Tests/`: watcher and icon rendering checks.
+- `app/scripts/`: build and test commands.
+- `app/docs/`: [license](app/docs/LICENSE), [changelog](app/docs/CHANGELOG.md), and [testing guide](app/docs/TESTING.md).
+
+## Development
+
+```sh
+./app/scripts/test.sh
+./app/scripts/build.sh
+```
+
+The generated app is `app/build/PGN Clipboard.app`. Tests use temporary files and injected clipboard/Trash operations; they do not process Downloads or modify the system clipboard. Builds use Apple's Swift compiler and SDK, without dependency downloads. `PGN_BUILD_DIR` optionally overrides the output directory; `PGN_SIGN_IDENTITY` selects an installed signing identity.
+
+The installed executable accepts `--login-status`, `--enable-login`, and `--disable-login` for troubleshooting. These exit without starting the watcher:
+
+```sh
+"$HOME/Applications/PGN Clipboard.app/Contents/MacOS/PGNClipboard" --login-status
+```
+
+## Privacy and distribution
+
+The application is sandboxed. Access to the selected folder is saved as a security-scoped bookmark. Preferences contain that bookmark and pause state. File contents are not logged; status and errors are kept in memory. There is no network entitlement. Clicking the author or feedback link explicitly opens the website or email handler outside the app.
+
+This is a **source distribution**, locally signed ad-hoc. It is not a notarized prebuilt release. A public prebuilt app needs Developer ID signing, notarization, and separate downloaded-artifact testing. Rebuilding with a different signing identity may require choosing the folder again. See the [testing guide](app/docs/TESTING.md) for the release checklist.
+
+Apple references: [App Sandbox file access](https://developer.apple.com/documentation/security/accessing-files-from-the-macos-app-sandbox), [SMAppService](https://developer.apple.com/documentation/servicemanagement/smappservice).
+
+## Independent project
+
+PGN Clipboard is an independent project by **[pivnev.design](https://www.pivnev.design/)**. It is not affiliated with, sponsored by, endorsed by, or an official product of Chess.com, Lichess, OpenAI, Apple, or any other company or organization. Third-party names describe compatibility or usage only.
+
+## Use it, fork it, contribute
+
+The source is public. You are welcome to use, study, modify, fork, contribute to, and share this project **for noncommercial purposes** under the [PolyForm Noncommercial License 1.0.0](app/docs/LICENSE). Commercial use is not granted by this license. Preserve the license and required attribution when sharing copies or derivatives.
+
+Because commercial use is restricted, this is **source-available software**, rather than open source in the OSI definition. The full license governs permitted uses.
+
+Found a bug or have an improvement? [Open an issue](https://github.com/Weeki513/pgn-clipboard/issues) or submit a pull request. See the [contribution guide](app/docs/CONTRIBUTING.md).
+
+Much respect to everyone who finds this little project useful. I hope it saves you a few clicks and helps you enjoy your games. — Anton, [pivnev.design](https://www.pivnev.design/)

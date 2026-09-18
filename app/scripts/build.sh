@@ -16,7 +16,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$OUT/module-cache"
 echo 'Compiling PGN Clipboard…'
 swiftc -O -swift-version 5 -target "$(uname -m)-apple-macosx13.0" \
   -module-cache-path "$OUT/module-cache" \
-  "$ROOT/Sources/Watcher.swift" "$ROOT/Sources/StatusIcon.swift" "$ROOT/Sources/main.swift" \
+  "$ROOT/Sources/Watcher.swift" "$ROOT/Sources/StatusIcon.swift" "$ROOT/Sources/AppDelegate.swift" "$ROOT/Sources/main.swift" \
   -framework AppKit -framework ServiceManagement -o "$APP/Contents/MacOS/PGNClipboard"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"

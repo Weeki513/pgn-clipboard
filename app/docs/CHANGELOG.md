@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0
+
+- Add persistent Strip headers and dependent Auto headers checkboxes to the menu and Controls window.
+- Preserve moves and annotations while optionally adding numbered, player-aware multi-game separators.
+- Add formatting and watcher integration coverage, refreshed native screenshots, and a stable latest-release download asset.
+
 ## 1.0.3
 
 - Prepare the first public GitHub release with a quick start, project banner, and application screenshots.

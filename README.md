@@ -4,11 +4,13 @@
 
 **Download a chess game. Paste its PGN.** A small macOS app that copies new PGN files to your clipboard, then moves the originals to Trash.
 
+**New in 1.1: choose exactly what you paste.** Enable **Strip headers** to copy only the moves and annotations. Add **Auto headers** to label each game in a multi-game file. Both options are in the pawn menu and Controls window.
+
 ## Get started in five steps
 
 **You need:** macOS 13 or later and Apple's free Command Line Tools (or Xcode). No paid developer account is needed.
 
-1. [Download the latest release](https://github.com/Weeki513/pgn-clipboard/releases/latest) and unzip **pgn-clipboard-source-v1.0.3.zip**. Keep the whole folder together.
+1. [Download the latest release](https://github.com/Weeki513/pgn-clipboard/releases/latest) and unzip **pgn-clipboard-source.zip**. Keep the whole folder together.
 2. If you do not have Command Line Tools, run `xcode-select --install` in Terminal and finish Apple's installer.
 3. Double-click **Install.command**. It builds and opens the app. If macOS blocks the downloaded script, follow the troubleshooting note below.
 4. Select **Downloads → Watch Folder** (or another folder). Existing files are left untouched.
@@ -24,11 +26,37 @@ The app builds locally for your Mac's architecture. This release contains source
 
 If Finder blocks `Install.command`, open Terminal, type `cd `, drag the extracted folder into the window, press Return, and run `bash app/install.sh`. This runs the included source installer; read it first if you want to inspect what it does. Do not run it as root or copy the installer alone. Keep the Terminal window open to read errors.
 
+## Strip headers & Auto headers
+
+Both options start **off**, and your choices persist across restarts. Changes apply to the next file processed; they do not rewrite a file or change text already on your clipboard.
+
+| Strip headers | Auto headers | Clipboard output |
+| --- | --- | --- |
+| Off | Disabled | Original PGN, unchanged |
+| On | Off | Moves and annotations, with original tag headers removed |
+| On | On | Same, plus numbered separators **only for multi-game files** |
+
+With **Auto headers**, each game starts with `Game N — White vs Black` when both player names are available. Missing, blank, or `?` names fall back to `Game N`. A single game gets no separator. Turning stripping off disables Auto headers while remembering its setting.
+
+Example with both options enabled:
+
+```text
+Game 1 — Alice vs Bob
+
+1. e4 e5 2. Nf3 *
+
+Game 2
+
+1. d4 d5 1/2-1/2
+```
+
+Moves, comments, variations, and results are retained. The original file goes to Trash with its original contents. Generated separators are plain text for reading or pasting into a chat, not PGN tag pairs; leave stripping off when a destination needs the original PGN headers.
+
 ## Screenshots
 
 The running app, using a dedicated demonstration folder.
 
-![Watching a folder](app/docs/images/watching.png)
+![Native Controls window with Strip headers and Auto headers enabled](app/docs/images/watching.png)
 
 ![A game successfully copied and moved to Trash](app/docs/images/copied.png)
 
@@ -47,7 +75,7 @@ The controls window and menu include clickable author and feedback links. The fe
 - Size and modification time must remain unchanged for at least three seconds. This handles ordinary browser downloads and renames, but cannot prove that every downloader has finished. Pause monitoring for unusual long-running exports.
 - Supported files are UTF-8, at most 5 MiB, with `Event`, `White`, and `Black` headers and a final result token: `1-0`, `0-1`, `1/2-1/2`, or `*`. BOM and CRLF are accepted. This is conservative validation, not a full chess/PGN parser. Unsupported encodings, missing tags, or comments after the final result are left untouched.
 - The app verifies its clipboard write before requesting a native Trash operation. On copy or move failure, the source stays in place and an error appears. Use **Retry Failed Files** to retry.
-- Multiple arrivals are processed oldest first by modification time, with filename as a tie-breaker. **Only the latest processed game remains in the clipboard.** Use this primarily for one game at a time, not bulk databases.
+- Multiple arrivals are processed oldest first by modification time, with filename as a tie-breaker. **Only the latest processed file remains in the clipboard, including every game in that file.** Separate files do not accumulate in the clipboard.
 - Copying replaces the current clipboard; another app may change it afterward. PGN Clipboard does not store clipboard history.
 
 ## Update or uninstall
@@ -85,7 +113,7 @@ The installed executable accepts `--login-status`, `--enable-login`, and `--disa
 
 ## Privacy and distribution
 
-The application is sandboxed. Access to the selected folder is saved as a security-scoped bookmark. Preferences contain that bookmark and pause state. File contents are not logged; status and errors are kept in memory. There is no network entitlement. Clicking the author or feedback link explicitly opens the website or email handler outside the app.
+The application is sandboxed. Access to the selected folder is saved as a security-scoped bookmark. Preferences contain that bookmark, pause state, and header-formatting preferences. File contents are not logged; status and errors are kept in memory. There is no network entitlement. Clicking the author or feedback link explicitly opens the website or email handler outside the app.
 
 This is a **source distribution**, locally signed ad-hoc. It is not a notarized prebuilt release. A public prebuilt app needs Developer ID signing, notarization, and separate downloaded-artifact testing. Rebuilding with a different signing identity may require choosing the folder again. See the [testing guide](app/docs/TESTING.md) for the release checklist.
 

@@ -106,6 +106,67 @@ let broken = downloads.appendingPathComponent("bad-encoding.pgn")
 try Data([0xff, 0xfe, 0x80]).write(to: broken)
 try watcher.scan(now: start.addingTimeInterval(84)); try watcher.scan(now: start.addingTimeInterval(87))
 expect(FileManager.default.fileExists(atPath: broken.path), "Invalid UTF-8 retained")
+// Formatting matrix: original text is byte-for-byte preserved unless stripping is on.
+let moves = "1. e4 e5 2. Nf3 *"
+let secondGame = "[Event \"Second\"]\n[White \"Alice\"]\n[Black \"Bob\"]\n[Result \"1-0\"]\n\n1. d4 d5 1-0\n"
+let multi = game + "\n" + secondGame
+func formatted(_ text: String, _ strip: Bool = true, _ auto: Bool = false) -> String {
+    PGNFormatter.format(text, options: HeaderOptions(stripHeaders: strip, autoHeaders: auto))
+}
+expect(formatted(game, false, false) == game, "Both options off preserves single PGN exactly")
+expect(formatted(multi, false, false) == multi, "Both options off preserves multi PGN exactly")
+expect(formatted(multi, false, true) == multi, "Saved Auto headers cannot affect output while stripping is off")
+expect(!HeaderOptions().autoHeadersEnabled && HeaderOptions(stripHeaders: true).autoHeadersEnabled, "Auto headers enabled only with stripping")
+expect(formatted(game) == moves, "Strip headers removes all original tags")
+expect(formatted(game, true, true) == moves, "Single game never gets a separator")
+expect(formatted(multi) == moves + "\n\n1. d4 d5 1-0", "Multiple games stay separated without auto headings")
+expect(formatted(multi, true, true) == "Game 1 — White vs Black\n\n" + moves + "\n\nGame 2 — Alice vs Bob\n\n1. d4 d5 1-0", "Multi-game numbered separators include both players")
+expect(formatted(multi + "\n" + game, true, true).contains("Game 3 — White vs Black"), "Three games numbered in source order")
+for value in ["", "?", "   "] {
+    let missing = secondGame.replacingOccurrences(of: "[White \"Alice\"]", with: "[White \"\(value)\"]")
+    expect(formatted(game + missing, true, true).hasSuffix("Game 2\n\n1. d4 d5 1-0"), "Unknown/empty player falls back to Game N: \(value)")
+}
+let absent = secondGame.replacingOccurrences(of: "[Black \"Bob\"]\n", with: "")
+expect(formatted(game + absent, true, true).contains("Game 2\n\n"), "Missing player tag falls back to number")
+let escaped = secondGame.replacingOccurrences(of: "Alice", with: #"Alice \"Ace\" \\ Team"#)
+expect(formatted(game + escaped, true, true).contains(#"Alice "Ace" \ Team vs Bob"#), "Escaped quotes and backslashes decoded in names")
+let unicode = secondGame.replacingOccurrences(of: "Alice", with: "Алиса ♟").replacingOccurrences(of: "Bob", with: "李")
+expect(formatted(game + unicode, true, true).contains("Алиса ♟ vs 李"), "Unicode player names preserved")
+expect(formatted("\u{FEFF}" + multi.replacingOccurrences(of: "\n", with: "\r\n"), true, true) == formatted(multi, true, true), "BOM and CRLF normalized when stripping")
+expect(formatted(multi.replacingOccurrences(of: "\n", with: "\r")) == formatted(multi), "CR-only line endings supported by formatter")
+let annotatedMoves = "1. e4 {keep this\n[White \"Comment\"]\n1-0} e5 (1... c5 (1... e6) *)\n; [Event \"Not a game\"] 0-1\n2. Nf3 $1 *"
+let annotated = game.replacingOccurrences(of: moves, with: annotatedMoves)
+expect(formatted(annotated) == annotatedMoves, "Comments, fake tags, NAGs and nested variations remain intact")
+expect(formatted(annotated + secondGame, true, true).components(separatedBy: "Game ").count == 3, "Comment and variation results do not split games")
+let inline = "[Event \"Test\"] [White \"A\"] [Black \"B\"] 1. e4 *"
+expect(formatted(inline) == "1. e4 *", "Tags on a shared line removed")
+expect(formatted(game.replacingOccurrences(of: "[Event \"Test\"]", with: "[Event \"Test\"]\n[Custom_Tag \"value\"]")) == moves, "Custom headers removed")
+for result in ["1-0", "0-1", "1/2-1/2", "*"] {
+    let endedGame = game.replacingOccurrences(of: "2. Nf3 *", with: "2. Nf3 \(result)")
+    expect(formatted(endedGame + secondGame, true, true).contains("Game 2 — Alice vs Bob"), "Game boundary after \(result)")
+}
+expect(formatted(game + "{final annotation}\n" + secondGame, true, true).contains("Game 2 — Alice vs Bob"), "Trailing annotation does not hide boundary")
+expect(formatted(game + "\n1. d4 d5 1/2-1/2", true, true).hasSuffix("Game 2\n\n1. d4 d5 1/2-1/2"), "Headerless subsequent game gets numbered fallback")
+expect(formatted("").isEmpty, "Empty formatter input safe")
+// Real watcher path applies current options after reading and validating the source.
+watcher.headerOptions = HeaderOptions(stripHeaders: true, autoHeaders: true)
+let formatFile = try write("format-options.pgn", multi)
+try watcher.scan(now: start.addingTimeInterval(88)); try watcher.scan(now: start.addingTimeInterval(91))
+expect(clipboard == formatted(multi, true, true) && !FileManager.default.fileExists(atPath: formatFile.path), "Watcher copies formatted multi-game text and trashes original")
+let movedOriginal = try FileManager.default.contentsOfDirectory(at: trash, includingPropertiesForKeys: nil).first { $0.lastPathComponent.hasSuffix("-format-options.pgn") }!
+let originalContents = try String(contentsOf: movedOriginal, encoding: .utf8)
+expect(originalContents == multi, "Trashed source contents are unchanged")
+watcher.headerOptions.stripHeaders = false
+let next = try write("format-disabled.pgn", game)
+try watcher.scan(now: start.addingTimeInterval(92)); try watcher.scan(now: start.addingTimeInterval(95))
+expect(clipboard == game && !FileManager.default.fileExists(atPath: next.path), "Options apply immediately to subsequent files")
+watcher.headerOptions.stripHeaders = true
+copySucceeds = false
+let formatFailure = try write("format-failure.pgn", game)
+try watcher.scan(now: start.addingTimeInterval(96)); try watcher.scan(now: start.addingTimeInterval(99))
+expect(FileManager.default.fileExists(atPath: formatFailure.path), "Formatting still preserves source on clipboard failure")
+copySucceeds = true
+
 try FileManager.default.removeItem(at: downloads)
 do { try watcher.scan(); expect(false, "Lost folder access reported") }
 catch { expect(true, "Lost folder access reported") }

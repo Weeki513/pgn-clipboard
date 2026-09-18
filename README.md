@@ -4,6 +4,10 @@
 
 **Download a chess game. Paste its PGN.** A small macOS app that copies new PGN files to your clipboard, then moves the originals to Trash.
 
+If your routine is **download → find in Downloads → open in a text editor → copy → paste → delete**, this skips the middle steps. Download a new `.pgn`, wait a few seconds, then paste into your analysis tool or chat. Existing files are left alone; the original goes to recoverable Trash after the clipboard write is verified.
+
+[Product page](https://pivnev.design/pgn) · [Download source ZIP](https://github.com/Weeki513/pgn-clipboard/releases/latest/download/pgn-clipboard-source.zip)
+
 **New in 1.1: choose exactly what you paste.** Enable **Strip headers** to copy only the moves and annotations. Add **Auto headers** to label each game in a multi-game file. Both options are in the pawn menu and Controls window.
 
 ## Get started in five steps

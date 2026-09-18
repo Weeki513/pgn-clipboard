@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.0
+
+- Add Controls and Recent Imports tabs to the main application window, with a direct menu shortcut.
+- Show original PGN previews capped at five visible lines with independent vertical scrolling.
+- Add Copy feedback, individual Delete, selection checkboxes, Select all, and Delete Selected.
+- Persist history deletion atomically without touching source files or clipboard contents.
+- Add history panel interaction tests and refresh README screenshots using synthetic games.
+
 ## 1.2.0
 
 - Add Recent Imports with timestamps and Copy for the last 10 imports, persisted locally with original and formatted content.

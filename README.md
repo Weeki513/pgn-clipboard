@@ -8,7 +8,7 @@ If your routine is **download → find in Downloads → open in a text editor �
 
 [Product page](https://pivnev.design/pgn) · [Download source ZIP](https://github.com/Weeki513/pgn-clipboard/releases/latest/download/pgn-clipboard-source.zip)
 
-**New in 1.2:** **Recent Imports** keeps the last 10 files with timestamps and a **Copy** action, even after the originals are trashed. **Move original to Trash** starts on and can be disabled. Rapid arrivals are saved and processed sequentially.
+**New in 1.3:** the app window now has **Controls** and **Recent Imports** tabs. Browse PGN previews, copy saved imports, or delete entries individually or in bulk. The last 10 files remain available even after the originals are trashed. **Move original to Trash** starts on and can be disabled.
 
 **Choose exactly what you paste.** Enable **Strip headers** to copy only the moves and annotations. Add **Auto headers** to label each game in a multi-game file. Both options are in the pawn menu and Controls window.
 
@@ -34,7 +34,9 @@ If Finder blocks `Install.command`, open Terminal, type `cd `, drag the extracte
 
 ## Recent Imports & Trash
 
-Open **Recent Imports** in the pawn menu, select a filename and timestamp, then choose **Copy**. The newest import is first; the last 10 imported files are kept across restarts. Each entry holds the complete original PGN and the exact formatted text captured on import. Copy restores that snapshot even if the original has been moved to Trash or deleted; changing header options later only affects new imports. A multi-game file occupies one entry.
+Open the app window and select the **Recent Imports** tab, or choose **Manage Recent Imports…** from the pawn menu. Each card shows the filename, import timestamp, and a selectable, read-only preview of the original PGN. Previews show at most five lines at once; scroll vertically inside a preview to read the rest. The history list also scrolls independently. Click **Copy** to restore the saved clipboard text. The pawn menu keeps its quick-copy submenu too. The newest import is first; the last 10 imported files are kept across restarts. Each entry holds the complete original PGN and the exact formatted text captured on import. Copy restores that snapshot even if the original has been moved to Trash or deleted; changing header options later only affects new imports. A multi-game file occupies one entry.
+
+**Delete** removes one saved import. Use the row checkboxes and **Delete Selected**, or **Select all**, to remove several. Deletion is permanent for those history entries, saves immediately, and never changes source files, Trash, or the current clipboard. An empty history shows a placeholder and disables selection actions.
 
 **Move original to Trash** is available in the menu and Controls, defaults **on**, and persists across restarts. Turn it off to keep originals in the watched folder. Successfully imported, unchanged files are not imported again or included in **Retry Failed Files**.
 
@@ -68,15 +70,15 @@ Moves, comments, variations, and results are retained. The original file keeps i
 
 ## Screenshots
 
-The running app, using a dedicated demonstration folder.
+Native application views with synthetic demonstration games; no personal PGNs are shown.
 
-![Native Controls window with Strip headers and Auto headers enabled](app/docs/images/watching.png)
+![Recent Imports tab with five-line scrollable PGN previews, Copy, Delete, and bulk selection](app/docs/images/recent-imports.png)
 
-![A game successfully copied and moved to Trash](app/docs/images/copied.png)
+![Controls tab with the Trash and header-formatting settings](app/docs/images/controls.png)
 
 ## Controls
 
-Click the pawn in the menu bar to see status, choose a folder, pause/resume, retry failed files, or quit. Pause and error states have separate icons.
+The app window contains **Controls** and **Recent Imports** tabs. Use Controls to choose a folder, pause/resume, adjust preferences, or quit. The pawn menu also exposes these actions and opens the Recent Imports tab directly. Pause and error states have separate icons.
 
 **Cannot see the icon?** Open **PGN Clipboard.app** again. Its controls window remains available even when a crowded menu bar, display notch, or menu bar manager hides the icon. **Show Menu Bar Icon** restores an app-hidden item.
 

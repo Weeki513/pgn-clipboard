@@ -62,3 +62,32 @@ let copy = recent.items[0].submenu!.item(withTitle: "Copy")!
 expect(copy.isEnabled && copy.representedObject as? String == "formatted" && copy.action != nil, "Recent Copy carries persisted formatted text")
 
 print("\(checks) menu checks passed in an isolated preferences suite.")
+
+// Exercise the real history panel with a fake clipboard and isolated disk store.
+let secondID = UUID()
+try history.record(RecentImport(id: secondID, filename: "second.pgn", importedAt: Date(), original: "[Event \"Preview\"]\n1\n2\n3\n4\n5\n6", clipboardText: "copy snapshot"))
+let panel = RecentImportsView(history: history)
+var copied = ""
+panel.copyText = { copied = $0; return true }
+func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+func button(_ label: String) -> NSButton {
+    descendants(panel).compactMap { $0 as? NSButton }.first { $0.accessibilityLabel() == label || $0.title == label }!
+}
+button("Copy second.pgn").performClick(nil)
+expect(copied == "copy snapshot", "Panel Copy uses stored formatted snapshot")
+let previews = descendants(panel).compactMap { $0 as? NSTextView }
+expect(previews.count == 2 && previews.contains { $0.string.contains("Preview") && !$0.isEditable && $0.isSelectable }, "Panel previews complete originals as selectable read-only text")
+button("Select second.pgn").performClick(nil)
+expect(button("Delete Selected (1)").isEnabled, "Checkbox enables bulk deletion")
+button("Delete Selected (1)").performClick(nil)
+let afterSelection = try history.entries()
+expect(afterSelection.count == 1 && !afterSelection.contains { $0.id == secondID }, "Bulk delete removes only selected entry")
+button("Delete example.pgn").performClick(nil)
+expect(try! history.entries().isEmpty, "Individual delete persists empty history")
+expect(!button("Select all").isEnabled && !button("Delete Selected").isEnabled, "Empty panel disables selection actions")
+for index in 0..<3 { try history.record(RecentImport(id: UUID(), filename: "\(index).pgn", importedAt: Date(), original: "PGN", clipboardText: "PGN")) }
+panel.reload(); button("Select all").performClick(nil)
+expect(button("Delete Selected (3)").isEnabled, "Select all selects every current import")
+button("Delete Selected (3)").performClick(nil)
+expect(try! RecentImports(url: historyURL).entries().isEmpty, "Bulk deletion survives a fresh history store")
+print("\(checks) total menu and history panel checks passed.")

@@ -12,6 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lastError: String?
     private var panelOpen = false
     private var controls: NSWindow?
+    private var tabs: NSTabView?
+    private var recentView: RecentImportsView?
     private var statusLabel: NSTextField?
     private var folderLabel: NSTextField?
     private var pauseButton: NSButton?
@@ -118,6 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             if error { self.setError(text) }
             else { self.message = text; self.refreshStatus() }
+            self.recentView?.reload()
         }
         lastError = nil; message = "Watching \(url.lastPathComponent) · new PGN files only"
         refreshStatus()
@@ -147,6 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             path.isEnabled = false; menu.addItem(path)
         }
         menu.addItem(.separator())
+        add(menu, "Manage Recent Imports…", #selector(showRecentImports))
         let recent = NSMenuItem(title: "Recent Imports", action: nil, keyEquivalent: "")
         let recentMenu = NSMenu(); recentMenu.autoenablesItems = false
         do {
@@ -193,14 +197,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
         entry.target = self; menu.addItem(entry); return entry
     }
-    @objc private func copyRecent(_ sender: NSMenuItem) {
-        guard let text = sender.representedObject as? String else { return }
+    @objc private func copyRecent(_ sender: NSMenuItem) -> Bool {
+        guard let text = sender.representedObject as? String else { return false }
         let board = NSPasteboard.general
         board.clearContents()
         guard board.setString(text, forType: .string), board.string(forType: .string) == text else {
-            setError("Could not copy recent import."); return
+            setError("Could not copy recent import."); return false
         }
-        message = "Copied from Recent Imports"; refreshStatus()
+        message = "Copied from Recent Imports"; refreshStatus(); return true
     }
     @objc private func toggleTrash() {
         moveOriginalToTrash.toggle()
@@ -243,10 +247,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshStatus()
     }
     private func refreshStatus() {
-        guard item != nil else { return }
-        item.button?.title = ""
-        item.button?.image = StatusIcon.image(paused: paused, hasError: lastError != nil)
-        item.button?.toolTip = paused ? "PGN Clipboard — Paused" : "PGN Clipboard — \(message)"
+        item?.button?.title = ""
+        item?.button?.image = StatusIcon.image(paused: paused, hasError: lastError != nil)
+        item?.button?.toolTip = paused ? "PGN Clipboard — Paused" : "PGN Clipboard — \(message)"
         statusLabel?.stringValue = paused ? "Paused. New files will stay in the folder." : message
         folderLabel?.stringValue = folder?.path ?? "No folder selected"
         pauseButton?.title = paused ? "Resume" : "Pause"
@@ -262,18 +265,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func restoreMenuIcon() { item.isVisible = true; refreshStatus() }
     @objc private func showControls() {
         if controls == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 520),
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 640),
                                   styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
             window.title = "PGN Clipboard"
             window.isReleasedWhenClosed = false
+            let tabs = NSTabView(frame: window.contentView!.bounds.insetBy(dx: 16, dy: 16))
+            tabs.autoresizingMask = [.width, .height]
+            window.contentView!.addSubview(tabs); self.tabs = tabs
+            let settings = NSTabViewItem(identifier: "controls"); settings.label = "Controls"
+            let container = NSView(); settings.view = container; tabs.addTabViewItem(settings)
+            let imports = NSTabViewItem(identifier: "recent"); imports.label = "Recent Imports"
+            let recent = RecentImportsView(history: history)
+            recent.copyText = { [weak self] text in
+                let sender = NSMenuItem(); sender.representedObject = text
+                return self?.copyRecent(sender) ?? false
+            }
+            imports.view = recent; tabs.addTabViewItem(imports); recentView = recent
             let stack = NSStackView()
             stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 16
             stack.translatesAutoresizingMaskIntoConstraints = false
-            window.contentView!.addSubview(stack)
+            container.addSubview(stack)
             NSLayoutConstraint.activate([
-                stack.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor, constant: 24),
-                stack.trailingAnchor.constraint(equalTo: window.contentView!.trailingAnchor, constant: -24),
-                stack.topAnchor.constraint(equalTo: window.contentView!.topAnchor, constant: 24)
+                stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 24),
+                stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -24),
+                stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 24)
             ])
             let title = NSTextField(labelWithString: "Download a game. Paste its PGN.")
             title.font = .systemFont(ofSize: 20, weight: .semibold)
@@ -326,7 +341,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         refreshStatus()
         NSApp.activate(ignoringOtherApps: true)
+        recentView?.reload()
         controls?.makeKeyAndOrderFront(nil)
+    }
+    @objc private func showRecentImports() {
+        showControls(); tabs?.selectTabViewItem(withIdentifier: "recent")
     }
     @objc private func openWebsite() {
         NSWorkspace.shared.open(URL(string: "https://www.pivnev.design/")!)
@@ -341,7 +360,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     @objc private func about() {
         NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert(); alert.messageText = "PGN Clipboard 1.2.0"
+        let alert = NSAlert(); alert.messageText = "PGN Clipboard 1.3.0"
         alert.informativeText = "Download a game. Paste its PGN.\n\nNew .pgn files are copied after at least 3 seconds without changes, saved in Recent Imports, then optionally moved to Trash. Recopy any of the last 10 imports from the menu.\n\nNo network access. No analytics. No Full Disk Access."
         alert.runModal()
     }

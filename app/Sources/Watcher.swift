@@ -164,7 +164,14 @@ final class RecentImports {
         var entries = try load()
         entries.removeAll { $0.id == entry.id }
         entries.insert(entry, at: 0)
-        let data = try JSONEncoder().encode(Array(entries.prefix(10)))
+        try save(Array(entries.prefix(10)))
+    }
+    func remove(ids: Set<UUID>) throws {
+        lock.lock(); defer { lock.unlock() }
+        try save(load().filter { !ids.contains($0.id) })
+    }
+    private func save(_ entries: [RecentImport]) throws {
+        let data = try JSONEncoder().encode(entries)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try data.write(to: url, options: .atomic)
     }

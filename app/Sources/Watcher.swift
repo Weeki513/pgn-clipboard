@@ -136,14 +136,61 @@ enum PGNFormatter {
     }
 }
 
+struct RecentImport: Codable {
+    let id: UUID
+    let filename: String
+    let importedAt: Date
+    let original: String
+    let clipboardText: String
+}
+
+/// All reads and atomic replacements share one lock. A failed write never changes memory.
+final class RecentImports {
+    static let defaultURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("PGN Clipboard/recent-imports.json")
+    private let url: URL
+    private let lock = NSLock()
+    init(url: URL = RecentImports.defaultURL) { self.url = url }
+    private func load() throws -> [RecentImport] {
+        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+        return try JSONDecoder().decode([RecentImport].self, from: Data(contentsOf: url))
+    }
+    func entries() throws -> [RecentImport] {
+        lock.lock(); defer { lock.unlock() }
+        return Array(try load().prefix(10))
+    }
+    func record(_ entry: RecentImport) throws {
+        lock.lock(); defer { lock.unlock() }
+        var entries = try load()
+        entries.removeAll { $0.id == entry.id }
+        entries.insert(entry, at: 0)
+        let data = try JSONEncoder().encode(Array(entries.prefix(10)))
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: url, options: .atomic)
+    }
+}
+
 final class Watcher {
     struct Observation {
         var stamp: FileStamp
         var changedAt: Date
         var eligible: Bool
         var attempted: Bool
+        var archived: RecentImport? = nil
     }
-    var headerOptions = HeaderOptions()
+    // Serializes complete imports, including history, clipboard verification and Trash.
+    private let lock = NSLock()
+    private var options = HeaderOptions()
+    private var shouldTrash = true
+    var headerOptions: HeaderOptions {
+        get { lock.lock(); defer { lock.unlock() }; return options }
+        set { lock.lock(); defer { lock.unlock() }; options = newValue }
+    }
+    var moveOriginalToTrash: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return shouldTrash }
+        set { lock.lock(); defer { lock.unlock() }; shouldTrash = newValue }
+    }
+    private let history: RecentImports
     let folder: URL
     let stableSeconds: TimeInterval
     private var observations: [URL: Observation] = [:]
@@ -151,8 +198,9 @@ final class Watcher {
     private let trash: (URL) throws -> Void
     var report: (String, Bool) -> Void = { _, _ in }
 
-    init(folder: URL, stableSeconds: TimeInterval = 3,
+    init(folder: URL, stableSeconds: TimeInterval = 3, history: RecentImports,
          copy: @escaping (String) -> Bool, trash: @escaping (URL) throws -> Void) {
+        self.history = history
         self.folder = folder; self.stableSeconds = stableSeconds; self.copy = copy; self.trash = trash
     }
     private func files() throws -> [URL: FileStamp] {
@@ -165,14 +213,17 @@ final class Watcher {
         return result
     }
     func baseline(now: Date = Date()) throws {
+        lock.lock(); defer { lock.unlock() }
         observations = try files().mapValues { Observation(stamp: $0, changedAt: now, eligible: false, attempted: false) }
     }
     func retryFailures(now: Date = Date()) {
+        lock.lock(); defer { lock.unlock() }
         for url in Array(observations.keys) where observations[url]!.eligible && observations[url]!.attempted {
             observations[url]!.attempted = false; observations[url]!.changedAt = now
         }
     }
     func scan(now: Date = Date()) throws {
+        lock.lock(); defer { lock.unlock() }
         let current = try files()
         observations = observations.filter { current[$0.key] != nil }
         for (url, stamp) in current {
@@ -192,11 +243,23 @@ final class Watcher {
             observations[url]!.attempted = true
             do {
                 let text = try PGN.read(url, expected: observation.stamp)
-                guard copy(PGNFormatter.format(text, options: headerOptions)) else { throw PGNError.clipboard }
+                let entry: RecentImport
+                if let archived = observations[url]?.archived { entry = archived }
+                else {
+                    entry = RecentImport(id: UUID(), filename: url.lastPathComponent,
+                        importedAt: now, original: text, clipboardText: PGNFormatter.format(text, options: options))
+                    try history.record(entry)
+                    observations[url]!.archived = entry
+                }
+                guard copy(entry.clipboardText) else { throw PGNError.clipboard }
                 guard FileStamp.read(url) == observation.stamp else { throw PGNError.changed }
-                try trash(url)
-                observations.removeValue(forKey: url)
-                report("Copied and moved to Trash: \(url.lastPathComponent)", false)
+                if shouldTrash {
+                    try trash(url)
+                    observations.removeValue(forKey: url)
+                } else {
+                    observations[url]!.eligible = false
+                }
+                report("\(shouldTrash ? "Copied and moved to Trash" : "Copied; original kept"): \(url.lastPathComponent)", false)
             } catch {
                 report("\(url.lastPathComponent): \(error.localizedDescription)", true)
             }

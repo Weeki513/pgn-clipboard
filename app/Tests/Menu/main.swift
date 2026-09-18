@@ -10,7 +10,10 @@ func expect(_ value: @autoclosure () -> Bool, _ label: String) {
     guard value() else { fatalError(label) }
     print("PASS: \(label)")
 }
-var delegate = AppDelegate(defaults: defaults)
+let historyURL = FileManager.default.temporaryDirectory.appendingPathComponent("menu-history-\(UUID().uuidString).json")
+let history = RecentImports(url: historyURL)
+defer { try? FileManager.default.removeItem(at: historyURL) }
+var delegate = AppDelegate(defaults: defaults, history: history)
 let menu = NSMenu()
 menu.autoenablesItems = false
 func items() -> (NSMenuItem, NSMenuItem) {
@@ -33,7 +36,7 @@ expect(auto.state == .on && defaults.bool(forKey: "autoHeaders"), "Auto menu act
 click(strip)
 (strip, auto) = items()
 expect(strip.state == .off && !auto.isEnabled && auto.state == .on, "Disabling strip retains inactive auto preference")
-delegate = AppDelegate(defaults: defaults)
+delegate = AppDelegate(defaults: defaults, history: history)
 (strip, auto) = items()
 expect(strip.state == .off && auto.state == .on && !auto.isEnabled, "Relaunch restores gated preferences")
 click(strip)
@@ -43,4 +46,19 @@ click(auto)
 (strip, auto) = items()
 expect(auto.state == .off && auto.isEnabled, "Auto can be turned off independently")
 expect(defaults.bool(forKey: "stripHeaders") && !defaults.bool(forKey: "autoHeaders"), "Both preferences stored independently")
+
+delegate.menuWillOpen(menu)
+let trash = menu.item(withTitle: "Move original to Trash")!
+expect(trash.state == .on, "Trash defaults ON")
+click(trash)
+delegate = AppDelegate(defaults: defaults, history: history)
+delegate.menuWillOpen(menu)
+expect(menu.item(withTitle: "Move original to Trash")!.state == .off, "Trash OFF survives relaunch")
+try history.record(RecentImport(id: UUID(), filename: "example.pgn", importedAt: Date(), original: "original", clipboardText: "formatted"))
+delegate.menuWillOpen(menu)
+let recent = menu.item(withTitle: "Recent Imports")!.submenu!
+expect(recent.items.count == 1 && recent.items[0].title.contains("example.pgn — "), "Recent menu displays filename and timestamp")
+let copy = recent.items[0].submenu!.item(withTitle: "Copy")!
+expect(copy.isEnabled && copy.representedObject as? String == "formatted" && copy.action != nil, "Recent Copy carries persisted formatted text")
+
 print("\(checks) menu checks passed in an isolated preferences suite.")

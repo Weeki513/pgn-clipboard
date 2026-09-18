@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0
+
+- Add Recent Imports with timestamps and Copy for the last 10 imports, persisted locally with original and formatted content.
+- Add a persistent Move original to Trash option, enabled by default.
+- Serialize watcher operations and save history atomically before clipboard/Trash; prevent duplicate retries and repeat imports of retained files.
+- Cover simultaneous scans, rapid arrivals, retention, reload after source removal, persistence failures, and menu settings.
+
 ## 1.1.0
 
 - Add persistent Strip headers and dependent Auto headers checkboxes to the menu and Controls window.

@@ -24,7 +24,8 @@ var copySucceeds = true
 var trashSucceeds = true
 var copies = 0
 var errors = [String]()
-let watcher = Watcher(folder: downloads, copy: { text in
+let history = RecentImports(url: root.appendingPathComponent("history.json"))
+let watcher = Watcher(folder: downloads, history: history, copy: { text in
     copies += 1
     if !copySucceeds { return false }; clipboard = text; return true
 }, trash: { url in
@@ -166,6 +167,72 @@ let formatFailure = try write("format-failure.pgn", game)
 try watcher.scan(now: start.addingTimeInterval(96)); try watcher.scan(now: start.addingTimeInterval(99))
 expect(FileManager.default.fileExists(atPath: formatFailure.path), "Formatting still preserves source on clipboard failure")
 copySucceeds = true
+
+// Simultaneous scans and rapid arrivals must commit each import exactly once.
+let batchFolder = root.appendingPathComponent("Batch")
+try FileManager.default.createDirectory(at: batchFolder, withIntermediateDirectories: true)
+let batchURL = root.appendingPathComponent("batch-history.json")
+let batchHistory = RecentImports(url: batchURL)
+var batchCopies: [String] = []
+let batchWatcher = Watcher(folder: batchFolder, stableSeconds: 0, history: batchHistory,
+    copy: { batchCopies.append($0); return true }, trash: { try FileManager.default.removeItem(at: $0) })
+try batchWatcher.baseline()
+for index in 0..<8 {
+    let url = batchFolder.appendingPathComponent("\(index).pgn")
+    try Data(game.replacingOccurrences(of: "Test", with: "Batch \(index)").utf8).write(to: url)
+    try FileManager.default.setAttributes([.modificationDate: start], ofItemAtPath: url.path)
+}
+DispatchQueue.concurrentPerform(iterations: 16) { _ in try! batchWatcher.scan() }
+let restored = try RecentImports(url: batchURL).entries()
+expect(batchCopies.count == 8 && restored.count == 8, "Concurrent scans import all eight arrivals exactly once")
+expect(restored.map { $0.filename } == (0..<8).reversed().map { "\($0).pgn" }, "Equal timestamps use deterministic filename order")
+expect(restored.allSatisfy { $0.original == $0.clipboardText } && restored.last!.original.contains("Batch 0"), "Reloaded history keeps full contents after sources are removed")
+batchWatcher.moveOriginalToTrash = false
+let kept = batchFolder.appendingPathComponent("kept.pgn")
+try Data(multi.utf8).write(to: kept)
+batchWatcher.headerOptions = HeaderOptions(stripHeaders: true, autoHeaders: true)
+try batchWatcher.scan()
+let saved = try batchHistory.entries().first!
+expect(saved.original == multi && saved.clipboardText == formatted(multi, true, true), "History preserves original and formatted import snapshot")
+batchWatcher.headerOptions = HeaderOptions()
+try batchWatcher.scan(); batchWatcher.retryFailures(); try batchWatcher.scan()
+expect(batchCopies.count == 9 && FileManager.default.fileExists(atPath: kept.path), "Trash OFF retains original without repeated imports or retries")
+for index in 8..<12 {
+    try Data(game.utf8).write(to: batchFolder.appendingPathComponent("rapid-\(index).pgn"))
+    try batchWatcher.scan()
+}
+let bounded = try batchHistory.entries()
+expect(batchCopies.count == 13 && bounded.count == 10 && bounded.first!.filename == "rapid-11.pgn", "Rapid successive arrivals persist with ten-entry eviction")
+// A persistence failure must stop before clipboard or Trash; explicit retry recovers.
+let blockedURL = root.appendingPathComponent("blocked")
+try Data("not a directory".utf8).write(to: blockedURL)
+let failureFolder = root.appendingPathComponent("Failure")
+try FileManager.default.createDirectory(at: failureFolder, withIntermediateDirectories: true)
+let failHistory = RecentImports(url: blockedURL.appendingPathComponent("history.json"))
+var failureCopies = 0
+var failCopy = false
+let failWatcher = Watcher(folder: failureFolder, stableSeconds: 0, history: failHistory,
+    copy: { _ in failureCopies += 1; return !failCopy }, trash: { _ in throw CocoaError(.fileWriteNoPermission) })
+try failWatcher.baseline()
+let failureFile = failureFolder.appendingPathComponent("failure.pgn")
+try Data(game.utf8).write(to: failureFile)
+try failWatcher.scan()
+expect(failureCopies == 0 && FileManager.default.fileExists(atPath: failureFile.path), "History write failure leaves source and clipboard untouched")
+try FileManager.default.removeItem(at: blockedURL)
+failCopy = true
+failWatcher.retryFailures(); try failWatcher.scan()
+let afterCopyFailure = try failHistory.entries()
+expect(afterCopyFailure.count == 1, "Clipboard failure still leaves durable history")
+failCopy = false
+failWatcher.retryFailures(); try failWatcher.scan()
+failWatcher.retryFailures(); try failWatcher.scan()
+let afterTrashFailure = try failHistory.entries()
+expect(afterTrashFailure.count == 1 && afterTrashFailure.first!.id == afterCopyFailure.first!.id, "Clipboard and Trash retries never duplicate history")
+failWatcher.moveOriginalToTrash = false
+failWatcher.retryFailures(); try failWatcher.scan()
+let recoveredCopies = failureCopies
+failWatcher.retryFailures(); try failWatcher.scan()
+expect(failureCopies == recoveredCopies, "Successful retained files do not enter Retry Failed Files")
 
 try FileManager.default.removeItem(at: downloads)
 do { try watcher.scan(); expect(false, "Lost folder access reported") }

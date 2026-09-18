@@ -18,10 +18,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var loginButton: NSButton?
     private var stripButton: NSButton?
     private var autoButton: NSButton?
+    private var trashButton: NSButton?
+    private let history: RecentImports
+    private var moveOriginalToTrash: Bool
     private let defaults: UserDefaults
     private var headerOptions: HeaderOptions
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, history: RecentImports = RecentImports()) {
+        self.history = history
+        self.moveOriginalToTrash = defaults.object(forKey: "moveOriginalToTrash") as? Bool ?? true
         self.defaults = defaults
         self.headerOptions = HeaderOptions(
             stripHeaders: defaults.bool(forKey: "stripHeaders"),
@@ -96,7 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     private func watch(_ url: URL) throws {
         let access = url.startAccessingSecurityScopedResource()
-        let candidate = Watcher(folder: url, copy: { text in
+        let candidate = Watcher(folder: url, history: history, copy: { text in
             let board = NSPasteboard.general
             board.clearContents()
             return board.setString(text, forType: .string) && board.string(forType: .string) == text
@@ -104,6 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             try FileManager.default.trashItem(at: url, resultingItemURL: nil)
         })
         candidate.headerOptions = headerOptions
+        candidate.moveOriginalToTrash = moveOriginalToTrash
         do { try candidate.baseline() }
         catch { if access { url.stopAccessingSecurityScopedResource() }; throw error }
         if securityAccess { folder?.stopAccessingSecurityScopedResource() }
@@ -123,7 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.activate(ignoringOtherApps: true)
         let panel = NSOpenPanel()
         panel.title = "PGN Clipboard"
-        panel.message = "Choose Downloads. New PGN files will be copied to your clipboard and moved to Trash. Existing files stay untouched."
+        panel.message = "Choose Downloads. New PGN files will be saved in Recent Imports and copied. Move original to Trash is optional (on by default). Existing files stay untouched."
         panel.prompt = "Watch Folder"
         panel.canChooseDirectories = true; panel.canChooseFiles = false
         panel.allowsMultipleSelection = false; panel.canCreateDirectories = false
@@ -141,11 +147,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             path.isEnabled = false; menu.addItem(path)
         }
         menu.addItem(.separator())
+        let recent = NSMenuItem(title: "Recent Imports", action: nil, keyEquivalent: "")
+        let recentMenu = NSMenu(); recentMenu.autoenablesItems = false
+        do {
+            let entries = try history.entries()
+            let formatter = DateFormatter(); formatter.dateStyle = .short; formatter.timeStyle = .medium
+            for entry in entries {
+                let row = NSMenuItem(title: "\(entry.filename) — \(formatter.string(from: entry.importedAt))", action: nil, keyEquivalent: "")
+                let actions = NSMenu(); actions.autoenablesItems = false
+                let copy = add(actions, "Copy", #selector(copyRecent(_:)))
+                copy.representedObject = entry.clipboardText
+                row.submenu = actions; recentMenu.addItem(row)
+            }
+            if entries.isEmpty { recentMenu.addItem(withTitle: "No imports yet", action: nil, keyEquivalent: "").isEnabled = false }
+        } catch {
+            recentMenu.addItem(withTitle: "History unavailable: \(error.localizedDescription)", action: nil, keyEquivalent: "").isEnabled = false
+        }
+        recent.submenu = recentMenu; menu.addItem(recent)
+        menu.addItem(.separator())
         add(menu, "Open Controls…", #selector(showControls))
         add(menu, "Choose Folder…", #selector(chooseFolder))
         add(menu, paused ? "Resume" : "Pause", #selector(togglePause)).isEnabled = watcher != nil
         add(menu, "Retry Failed Files", #selector(retry)).isEnabled = watcher != nil && lastError != nil && !paused
         menu.addItem(.separator())
+        let trash = add(menu, "Move original to Trash", #selector(toggleTrash))
+        trash.state = moveOriginalToTrash ? .on : .off
         let strip = add(menu, "Strip headers", #selector(toggleStripHeaders))
         strip.state = headerOptions.stripHeaders ? .on : .off
         let auto = add(menu, "Auto headers", #selector(toggleAutoHeaders))
@@ -166,6 +192,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @discardableResult private func add(_ menu: NSMenu, _ title: String, _ action: Selector) -> NSMenuItem {
         let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
         entry.target = self; menu.addItem(entry); return entry
+    }
+    @objc private func copyRecent(_ sender: NSMenuItem) {
+        guard let text = sender.representedObject as? String else { return }
+        let board = NSPasteboard.general
+        board.clearContents()
+        guard board.setString(text, forType: .string), board.string(forType: .string) == text else {
+            setError("Could not copy recent import."); return
+        }
+        message = "Copied from Recent Imports"; refreshStatus()
+    }
+    @objc private func toggleTrash() {
+        moveOriginalToTrash.toggle()
+        defaults.set(moveOriginalToTrash, forKey: "moveOriginalToTrash")
+        watcher?.moveOriginalToTrash = moveOriginalToTrash
+        refreshStatus()
     }
     @objc private func toggleStripHeaders() {
         headerOptions.stripHeaders.toggle()
@@ -210,6 +251,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         folderLabel?.stringValue = folder?.path ?? "No folder selected"
         pauseButton?.title = paused ? "Resume" : "Pause"
         pauseButton?.isEnabled = watcher != nil
+        trashButton?.state = moveOriginalToTrash ? .on : .off
         stripButton?.state = headerOptions.stripHeaders ? .on : .off
         autoButton?.state = headerOptions.autoHeaders ? .on : .off
         autoButton?.isEnabled = headerOptions.autoHeadersEnabled
@@ -220,7 +262,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func restoreMenuIcon() { item.isVisible = true; refreshStatus() }
     @objc private func showControls() {
         if controls == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 480),
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 520),
                                   styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
             window.title = "PGN Clipboard"
             window.isReleasedWhenClosed = false
@@ -252,6 +294,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             row.addArrangedSubview(pause); pauseButton = pause
             row.addArrangedSubview(NSButton(title: "Retry Failed Files", target: self, action: #selector(retry)))
             stack.addArrangedSubview(row)
+            let trash = NSButton(checkboxWithTitle: "Move original to Trash", target: self, action: #selector(toggleTrash))
+            stack.addArrangedSubview(trash); trashButton = trash
             let strip = NSButton(checkboxWithTitle: "Strip headers", target: self, action: #selector(toggleStripHeaders))
             stack.addArrangedSubview(strip); stripButton = strip
             let auto = NSButton(checkboxWithTitle: "Auto headers", target: self, action: #selector(toggleAutoHeaders))
@@ -297,8 +341,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     @objc private func about() {
         NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert(); alert.messageText = "PGN Clipboard 1.1.0"
-        alert.informativeText = "Download a game. Paste its PGN.\n\nNew .pgn files are copied after at least 3 seconds without changes, then moved to Trash. Only the latest processed game stays in the clipboard.\n\nNo network access. No analytics. No Full Disk Access."
+        let alert = NSAlert(); alert.messageText = "PGN Clipboard 1.2.0"
+        alert.informativeText = "Download a game. Paste its PGN.\n\nNew .pgn files are copied after at least 3 seconds without changes, saved in Recent Imports, then optionally moved to Trash. Recopy any of the last 10 imports from the menu.\n\nNo network access. No analytics. No Full Disk Access."
         alert.runModal()
     }
     @objc private func reset() {

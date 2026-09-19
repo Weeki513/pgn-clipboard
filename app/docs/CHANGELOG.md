@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.1
+
+- Mark White with □ and Black with ■ in auto headers: `Game 1 — □ Player1 vs Player2 ■`.
+- Add auto headers to single-game files too.
+- Normalize whitespace between moves on copy, with or without stripping headers.
+- Preserve comment contents, semicolon-comment line endings, and separation between games.
+
 ## 1.3.0
 
 - Add Controls and Recent Imports tabs to the main application window, with a direct menu shortcut.

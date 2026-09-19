@@ -9,9 +9,9 @@ Run on macOS with Apple's Command Line Tools or Xcode:
 
 ## Automated coverage
 
-The watcher suite runs 53 checks in a temporary directory, using injected clipboard and Trash operations. It covers existing files, stability delays, interrupted writes, case-insensitive extensions, invalid/incomplete PGN, failed clipboard writes, explicit retries, failed Trash operations, symlinks, size limits, browser rename behavior, pause/resume baseline, CRLF, BOM, required headers, file-change detection, batch ordering, invalid UTF-8, and inaccessible folders.
+The watcher suite runs checks in a temporary directory, using injected clipboard and Trash operations. It covers existing files, stability delays, interrupted writes, case-insensitive extensions, invalid/incomplete PGN, failed clipboard writes, explicit retries, failed Trash operations, symlinks, size limits, browser rename behavior, pause/resume baseline, CRLF, BOM, required headers, file-change detection, batch ordering, invalid UTF-8, and inaccessible folders.
 
-Formatting coverage includes all option combinations, single/multiple games, missing and unknown names, escaped quotes/backslashes, Unicode, BOM/line endings, custom tags, comments, nested variations, all result tokens, unchanged Trash contents, immediate setting changes, and clipboard failure.
+Formatting coverage includes all option combinations, single/multiple games, missing and unknown names, escaped quotes/backslashes, Unicode, BOM/line endings, custom tags, comments, nested variations, all result tokens, color markers, single-game auto headers, whitespace normalization with/without stripping, Unicode whitespace, semicolon line endings, unchanged Trash contents, immediate setting changes, and clipboard failure.
 
 The icon suite runs 9 checks: the normal, paused, and error images must use template tinting, fit an 18-point canvas, and actually rasterize nontransparent pixels. This guards against empty or font-dependent menu bar content.
 

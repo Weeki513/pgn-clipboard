@@ -107,7 +107,7 @@ let broken = downloads.appendingPathComponent("bad-encoding.pgn")
 try Data([0xff, 0xfe, 0x80]).write(to: broken)
 try watcher.scan(now: start.addingTimeInterval(84)); try watcher.scan(now: start.addingTimeInterval(87))
 expect(FileManager.default.fileExists(atPath: broken.path), "Invalid UTF-8 retained")
-// Formatting matrix: original text is byte-for-byte preserved unless stripping is on.
+// Formatting matrix: headers remain optional; movetext whitespace is normalized.
 let moves = "1. e4 e5 2. Nf3 *"
 let secondGame = "[Event \"Second\"]\n[White \"Alice\"]\n[Black \"Bob\"]\n[Result \"1-0\"]\n\n1. d4 d5 1-0\n"
 let multi = game + "\n" + secondGame
@@ -119,10 +119,10 @@ expect(formatted(multi, false, false) == multi, "Both options off preserves mult
 expect(formatted(multi, false, true) == multi, "Saved Auto headers cannot affect output while stripping is off")
 expect(!HeaderOptions().autoHeadersEnabled && HeaderOptions(stripHeaders: true).autoHeadersEnabled, "Auto headers enabled only with stripping")
 expect(formatted(game) == moves, "Strip headers removes all original tags")
-expect(formatted(game, true, true) == moves, "Single game never gets a separator")
+expect(formatted(game, true, true) == "Game 1 — □ White vs Black ■\n\n" + moves, "Single game gets a color-marked header")
 expect(formatted(multi) == moves + "\n\n1. d4 d5 1-0", "Multiple games stay separated without auto headings")
-expect(formatted(multi, true, true) == "Game 1 — White vs Black\n\n" + moves + "\n\nGame 2 — Alice vs Bob\n\n1. d4 d5 1-0", "Multi-game numbered separators include both players")
-expect(formatted(multi + "\n" + game, true, true).contains("Game 3 — White vs Black"), "Three games numbered in source order")
+expect(formatted(multi, true, true) == "Game 1 — □ White vs Black ■\n\n" + moves + "\n\nGame 2 — □ Alice vs Bob ■\n\n1. d4 d5 1-0", "Multi-game numbered separators include both players")
+expect(formatted(multi + "\n" + game, true, true).contains("Game 3 — □ White vs Black ■"), "Three games numbered in source order")
 for value in ["", "?", "   "] {
     let missing = secondGame.replacingOccurrences(of: "[White \"Alice\"]", with: "[White \"\(value)\"]")
     expect(formatted(game + missing, true, true).hasSuffix("Game 2\n\n1. d4 d5 1-0"), "Unknown/empty player falls back to Game N: \(value)")
@@ -137,17 +137,31 @@ expect(formatted("\u{FEFF}" + multi.replacingOccurrences(of: "\n", with: "\r\n")
 expect(formatted(multi.replacingOccurrences(of: "\n", with: "\r")) == formatted(multi), "CR-only line endings supported by formatter")
 let annotatedMoves = "1. e4 {keep this\n[White \"Comment\"]\n1-0} e5 (1... c5 (1... e6) *)\n; [Event \"Not a game\"] 0-1\n2. Nf3 $1 *"
 let annotated = game.replacingOccurrences(of: moves, with: annotatedMoves)
-expect(formatted(annotated) == annotatedMoves, "Comments, fake tags, NAGs and nested variations remain intact")
+expect(formatted(annotated) == annotatedMoves.replacingOccurrences(of: ")\n;", with: ") ;"), "Comments, fake tags, NAGs and nested variations remain intact")
 expect(formatted(annotated + secondGame, true, true).components(separatedBy: "Game ").count == 3, "Comment and variation results do not split games")
 let inline = "[Event \"Test\"] [White \"A\"] [Black \"B\"] 1. e4 *"
 expect(formatted(inline) == "1. e4 *", "Tags on a shared line removed")
 expect(formatted(game.replacingOccurrences(of: "[Event \"Test\"]", with: "[Event \"Test\"]\n[Custom_Tag \"value\"]")) == moves, "Custom headers removed")
 for result in ["1-0", "0-1", "1/2-1/2", "*"] {
     let endedGame = game.replacingOccurrences(of: "2. Nf3 *", with: "2. Nf3 \(result)")
-    expect(formatted(endedGame + secondGame, true, true).contains("Game 2 — Alice vs Bob"), "Game boundary after \(result)")
+    expect(formatted(endedGame + secondGame, true, true).contains("Game 2 — □ Alice vs Bob ■"), "Game boundary after \(result)")
 }
-expect(formatted(game + "{final annotation}\n" + secondGame, true, true).contains("Game 2 — Alice vs Bob"), "Trailing annotation does not hide boundary")
+expect(formatted(game + "{final annotation}\n" + secondGame, true, true).contains("Game 2 — □ Alice vs Bob ■"), "Trailing annotation does not hide boundary")
 expect(formatted(game + "\n1. d4 d5 1/2-1/2", true, true).hasSuffix("Game 2\n\n1. d4 d5 1/2-1/2"), "Headerless subsequent game gets numbered fallback")
+
+let wrappedMoves = "1.\te4  e5\r\n2.\u{00A0}Nf3\u{2003}*"
+let wrappedGame = game.replacingOccurrences(of: moves, with: wrappedMoves)
+expect(formatted(wrappedGame) == moves, "Spaces, tabs, CRLF and Unicode whitespace between moves collapse")
+expect(formatted(wrappedGame, false) == game, "Movetext normalizes even with Strip headers off")
+expect(formatted(wrappedGame + "\n" + wrappedGame, false) == game + "\n" + game, "Original headers and inter-game separation survive normalization")
+let comments = "1. e4 {keep  spaces\nand\ttabs; [White \"X\"]}  e5\n;keep  this\tcomment\n 2. Nf3 *"
+let cleanComments = "1. e4 {keep  spaces\nand\ttabs; [White \"X\"]} e5 ;keep  this\tcomment\n2. Nf3 *"
+expect(formatted(game.replacingOccurrences(of: moves, with: comments)) == cleanComments, "Comment contents and semicolon terminator survive")
+let crlfComment = "1. e4 ;keep  text\r\n  e5 *"
+expect(formatted(game.replacingOccurrences(of: moves, with: crlfComment), false).contains(";keep  text\r\ne5 *"), "Unstripped semicolon CRLF stays intact")
+expect(formatted(game.replacingOccurrences(of: moves, with: "1. e4 (1.\n d4\t d5) e5 *")) == "1. e4 (1. d4 d5) e5 *", "Variation whitespace normalizes without changing parentheses")
+expect(formatted(game + "\n1.\td4\nd5 1-0") == moves + "\n\n1. d4 d5 1-0", "Headerless games retain a blank-line boundary")
+
 expect(formatted("").isEmpty, "Empty formatter input safe")
 // Real watcher path applies current options after reading and validating the source.
 watcher.headerOptions = HeaderOptions(stripHeaders: true, autoHeaders: true)

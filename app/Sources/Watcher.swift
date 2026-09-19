@@ -77,15 +77,17 @@ struct HeaderOptions {
 
 enum PGNFormatter {
     static func format(_ source: String, options: HeaderOptions) -> String {
-        guard options.stripHeaders else { return source }
-        let text = source.replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
-            .trimmingCharacters(in: CharacterSet(charactersIn: "\u{FEFF}"))
+        let text = options.stripHeaders ? source.trimmingCharacters(in: CharacterSet(charactersIn: "\u{FEFF}")) : source
         // Tokenize comments as a whole so header-like text inside annotations survives.
-        let pattern = #"\{[^}]*\}|;[^\n]*(?:\n|$)|\[[A-Za-z0-9_]+\s+"(?:[^"\\]|\\.)*"\s*\]|[()]|[^\s{};\[()]+|[\s\S]"#
+        let pattern = #"\{[^}]*\}|;[^\r\n]*(?:\r\n|[\r\n]|$)|\[[A-Za-z0-9_]+\s+"(?:[^"\\]|\\.)*"\s*\]|[()]|[^\s{};\[()]+|[\s\S]"#
         let regex = try! NSRegularExpression(pattern: pattern)
         let tagRegex = try! NSRegularExpression(pattern: #"^\[([A-Za-z0-9_]+)\s+"((?:[^"\\]|\\.)*)"\s*\]$"#)
-        struct Game { var tags: [String: String] = [:]; var moves = "" }
+        struct Game {
+            var tags: [String: String] = [:]
+            var moves = ""
+            var start: Int?
+            var end = 0
+        }
         var games: [Game] = []
         var current = Game()
         var depth = 0
@@ -94,6 +96,7 @@ enum PGNFormatter {
         let ns = text as NSString
         for match in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
             let token = ns.substring(with: match.range)
+            if match.range.location == 0 && token == "\u{FEFF}" { continue }
             let tokenNS = token as NSString
             if depth == 0, (!hasMoves || ended),
                let tag = tagRegex.firstMatch(in: token, range: NSRange(location: 0, length: tokenNS.length)) {
@@ -111,6 +114,10 @@ enum PGNFormatter {
                 && !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 games.append(current); current = Game(); hasMoves = false; ended = false
             }
+            if !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if current.start == nil { current.start = match.range.location }
+                current.end = NSMaxRange(match.range)
+            }
             current.moves += token
             if token.hasPrefix("{") || token.hasPrefix(";") || token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { continue }
             if token == "(" { depth += 1; continue }
@@ -121,18 +128,45 @@ enum PGNFormatter {
             }
         }
         if !current.moves.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { games.append(current) }
+        if !options.stripHeaders {
+            // Replace only movetext spans; preserve tag formatting and game separators.
+            let output = NSMutableString(string: text)
+            for game in games.reversed() {
+                guard let start = game.start else { continue }
+                let range = NSRange(location: start, length: game.end - start)
+                output.replaceCharacters(in: range, with: normalizeMovetext(ns.substring(with: range)))
+            }
+            return output as String
+        }
         return games.enumerated().map { index, game in
-            let moves = game.moves.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard options.autoHeaders && games.count > 1 else { return moves }
+            let moves = normalizeMovetext(game.moves).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard options.autoHeaders else { return moves }
             var title = "Game \(index + 1)"
             func name(_ key: String) -> String? {
                 guard let value = game.tags[key]?.split(whereSeparator: { $0.isWhitespace }).joined(separator: " "),
                       !value.isEmpty, value != "?" else { return nil }
                 return value
             }
-            if let white = name("White"), let black = name("Black") { title += " — \(white) vs \(black)" }
+            if let white = name("White"), let black = name("Black") { title += " — □ \(white) vs \(black) ■" }
             return title + "\n\n" + moves
         }.joined(separator: "\n\n")
+    }
+
+    private static func normalizeMovetext(_ text: String) -> String {
+        // Comments are opaque. In particular, a semicolon comment MUST retain its
+        // line ending so that the following move does not become comment text.
+        let regex = try! NSRegularExpression(pattern: #"\{[^}]*\}|;[^\r\n]*(?:\r\n|[\r\n]|$)|\s+|[^\s{;]+|[\s\S]"#)
+        let ns = text as NSString
+        var output = ""
+        for match in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            let token = ns.substring(with: match.range)
+            if token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if !output.isEmpty && output.unicodeScalars.last != "\n" && output.unicodeScalars.last != "\r" { output += " " }
+            } else {
+                output += token
+            }
+        }
+        return output
     }
 }
 

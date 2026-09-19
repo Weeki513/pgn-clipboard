@@ -10,7 +10,7 @@ If your routine is **download → find in Downloads → open in a text editor �
 
 **New in 1.3:** the app window now has **Controls** and **Recent Imports** tabs. Browse PGN previews, copy saved imports, or delete entries individually or in bulk. The last 10 files remain available even after the originals are trashed. **Move original to Trash** starts on and can be disabled.
 
-**Choose exactly what you paste.** Enable **Strip headers** to copy only the moves and annotations. Add **Auto headers** to label each game in a multi-game file. Both options are in the pawn menu and Controls window.
+**Choose exactly what you paste.** Enable **Strip headers** to copy only the moves and annotations. Add **Auto headers** to label every game, including single-game files. Both options are in the pawn menu and Controls window.
 
 ## Get started in five steps
 
@@ -48,16 +48,16 @@ Both options start **off**, and your choices persist across restarts. Changes ap
 
 | Strip headers | Auto headers | Clipboard output |
 | --- | --- | --- |
-| Off | Disabled | Original PGN, unchanged |
+| Off | Disabled | Original PGN headers with normalized movetext |
 | On | Off | Moves and annotations, with original tag headers removed |
-| On | On | Same, plus numbered separators **only for multi-game files** |
+| On | On | Same, plus numbered headers **for every game** |
 
-With **Auto headers**, each game starts with `Game N — White vs Black` when both player names are available. Missing, blank, or `?` names fall back to `Game N`. A single game gets no separator. Turning stripping off disables Auto headers while remembering its setting.
+With **Auto headers**, each game starts with `Game N — □ White vs Black ■` when both player names are available. Missing, blank, or `?` names fall back to `Game N`. A single game also gets a header. □ marks White; ■ marks Black. Turning stripping off disables Auto headers while remembering its setting.
 
 Example with both options enabled:
 
 ```text
-Game 1 — Alice vs Bob
+Game 1 — □ Alice vs Bob ■
 
 1. e4 e5 2. Nf3 *
 
@@ -66,7 +66,7 @@ Game 2
 1. d4 d5 1/2-1/2
 ```
 
-Moves, comments, variations, and results are retained. The original file keeps its original contents whether retained or moved to Trash. Generated separators are plain text for reading or pasting into a chat, not PGN tag pairs; leave stripping off when a destination needs the original PGN headers.
+Whitespace between moves is collapsed to one space, with or without stripping. Each game’s movetext runs on one line unless a comment requires line breaks. Comment contents and semicolon-comment line endings are preserved, and games remain separated. Moves, variations, NAGs, and results are retained. The original file keeps its original contents whether retained or moved to Trash. Generated separators are plain text for reading or pasting into a chat, not PGN tag pairs; leave stripping off when a destination needs the original PGN headers.
 
 ## Screenshots
 

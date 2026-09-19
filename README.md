@@ -8,7 +8,7 @@ If your routine is **download → find in Downloads → open in a text editor �
 
 [Product page](https://pivnev.design/pgn) · [Download source ZIP](https://github.com/Weeki513/pgn-clipboard/releases/latest/download/pgn-clipboard-source.zip)
 
-**Local 1.4 preview:** unlimited SQLite history, search, disk usage, configurable retention, raw/current-format copying, and an ASCII interface with a floating metal clip. This build has not been published. Run `./app/scripts/preview.sh` for a separate preview app with synthetic games; it does not replace your installed app or migrate your production history.
+**Version 1.4.0:** unlimited SQLite history, search, disk usage, configurable retention, raw/current-format copying, and an ASCII interface with a floating metal clip. Run the new installer to update while keeping your settings and history.
 
 **Choose exactly what you paste.** Enable **Strip headers** to copy only the moves and annotations. Add **Auto headers** to label every game, including single-game files. Both options are in the pawn menu and Controls window.
 

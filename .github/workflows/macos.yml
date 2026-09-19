@@ -9,7 +9,20 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Verify executable entry points
+        run: |
+          for script in Install.command Uninstall.command app/install.sh app/uninstall.sh app/scripts/{build,test,preview,package}.sh; do
+            test -x "$script" || { echo "Missing executable permission: $script"; exit 1; }
+          done
       - name: Test watcher and scripts
         run: ./app/scripts/test.sh
       - name: Build and verify signed app
         run: ./app/scripts/build.sh
+      - name: Verify release archive permissions
+        run: |
+          ./app/scripts/package.sh "$RUNNER_TEMP/release"
+          unzip -q "$RUNNER_TEMP/release/pgn-clipboard-source.zip" -d "$RUNNER_TEMP/extracted"
+          cd "$RUNNER_TEMP/extracted/pgn-clipboard"
+          for script in Install.command Uninstall.command app/install.sh app/uninstall.sh app/scripts/{build,test,preview,package}.sh; do
+            test -x "$script" || { echo "Archive lost executable permission: $script"; exit 1; }
+          done

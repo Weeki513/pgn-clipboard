@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.4.0 — local preview, not published
+## 1.4.0 — 2026-09-19
 
 - Replace the ten-entry JSON store with SQLite and transactional migration.
 - Add background search, 50-row pages, on-demand originals, and disk usage.
@@ -11,6 +11,9 @@
 - Replace nested preview cards with a native scrolling list and full-height preview.
 - Refresh the dark macOS window using the supplied clipboard asset and monospaced typography.
 - Add an isolated preview build with synthetic history for review before release.
+- Use a consistent monospace size and cyan accent, live formatted previews, hover states, and brief copy feedback.
+- Keep window dimensions stable when switching tabs and simplify retention settings.
+- Restore executable permissions for build, test, and preview scripts; verify source-package permissions in CI.
 
 ## 1.3.2
 

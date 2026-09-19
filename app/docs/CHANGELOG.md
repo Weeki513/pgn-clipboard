@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.2
+
+- Let Install.command update an existing native app without uninstalling or resetting settings, folder access, history, or login registration.
+- Build and verify before stopping the old app; restore the previous bundle if replacement fails.
+- Refuse to overwrite an unrelated or legacy app.
+
 ## 1.3.1
 
 - Mark White with □ and Black with ■ in auto headers: `Game 1 — □ Player1 vs Player2 ■`.

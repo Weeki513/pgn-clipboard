@@ -17,6 +17,8 @@ The icon suite runs 9 checks: the normal, paused, and error images must use temp
 
 The menu suite runs 10 checks against real NSMenu items and actions with isolated preferences, including disabled-state enforcement and persistence across delegate recreation.
 
+Five installer checks cover fresh installation, whole-bundle updates, restoration on replacement failure, unrelated bundle rejection, and symlink rejection using temporary bundles.
+
 Shell scripts are syntax-checked and property lists are validated. The build verifies the generated app's signature. GitHub Actions runs the test and build commands on a macOS runner.
 
 ## Manual release checklist

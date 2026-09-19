@@ -98,7 +98,7 @@ The controls window and menu include clickable author and feedback links. The fe
 
 Double-click **Uninstall.command**, or run `bash app/uninstall.sh`. The app stops, unregisters its login item, clears its saved folder settings, and is removed. Your PGN files and clipboard are not changed. The local Recent Imports file is retained in the sandbox container. To permanently erase saved PGN contents, remove `~/Library/Containers/design.pivnev.pgnclipboard/Data/Library/Application Support/PGN Clipboard/recent-imports.json` after quitting.
 
-To update, uninstall first, then use **Install.command** from the new package. Choose your folder and enable Launch at Login again. The installer refuses to overwrite an existing app or silently remove legacy installations.
+To update, run **Install.command** from the new package. It builds and verifies the new version before stopping and replacing the existing app. Your watched folder, settings, Recent Imports, and login-item registration are preserved. If macOS asks you to approve the updated login item, approve it in System Settings. Do not uninstall first. The installer refuses to replace a different or legacy app and restores the previous bundle if replacement fails.
 
 For a settings reset without deleting the app, use **Reset Access and Quit…** in the menu. Resetting access preserves Recent Imports.
 

@@ -71,8 +71,15 @@ final class ASCIIButtonCell: NSButtonCell {
     }
     override func draw(withFrame cellFrame: NSRect, in controlView: NSView) {
         let marked = isHighlighted || feedbackActive || (persistent && state == .on)
-        let label = checkbox ? (state == .on ? "[x] " : "[ ] ") + title
-            : (marked ? "> " + title + " <" : "[ " + title + " ]")
+        let label: String
+        if checkbox {
+            let prefix = state == .on ? "[x] " : "[ ] "
+            label = prefix + title
+        } else if marked {
+            label = "> " + title + " <"
+        } else {
+            label = "[ " + title + " ]"
+        }
         let color = !isEnabled ? NSColor(white: 0.32, alpha: 1) : ((marked || hovered) ? ASCIIStyle.accent : ASCIIStyle.ink)
         let attributes: [NSAttributedString.Key: Any] = [.font: font ?? ASCIIStyle.font(), .foregroundColor: color]
         let size = (label as NSString).size(withAttributes: attributes)

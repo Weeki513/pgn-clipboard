@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.1 — 2026-09-19
+
+- Restore the complete original ClipboardClip.png; the 1.4.0 resource contained corrupted image data.
+- Validate PNG chunk checksums and compressed image data before testing and packaging releases.
+
 ## 1.4.0 — 2026-09-19
 
 - Replace the ten-entry JSON store with SQLite and transactional migration.

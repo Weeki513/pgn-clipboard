@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+python3 "$ROOT/Tests/resources.py"
 OUT="${PGN_BUILD_DIR:-$ROOT/build}"
 mkdir -p "$OUT/module-cache"
 swiftc -swift-version 5 -target "$(uname -m)-apple-macosx13.0" -module-cache-path "$OUT/module-cache" \

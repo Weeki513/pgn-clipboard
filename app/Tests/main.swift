@@ -216,7 +216,7 @@ for index in 8..<12 {
     try batchWatcher.scan()
 }
 let bounded = try batchHistory.entries()
-expect(batchCopies.count == 13 && bounded.count == 10 && bounded.first!.filename == "rapid-11.pgn", "Rapid successive arrivals persist with ten-entry eviction")
+expect(batchCopies.count == 13 && bounded.count == 13 && bounded.first!.filename == "rapid-11.pgn", "Rapid successive arrivals persist with unlimited history retention")
 // A persistence failure must stop before clipboard or Trash; explicit retry recovers.
 let blockedURL = root.appendingPathComponent("blocked")
 try Data("not a directory".utf8).write(to: blockedURL)

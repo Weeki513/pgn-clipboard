@@ -15,7 +15,9 @@ Formatting coverage includes all option combinations, single/multiple games, mis
 
 The icon suite runs 9 checks: the normal, paused, and error images must use template tinting, fit an 18-point canvas, and actually rasterize nontransparent pixels. This guards against empty or font-dependent menu bar content.
 
-The menu suite runs 10 checks against real NSMenu items and actions with isolated preferences, including disabled-state enforcement and persistence across delegate recreation.
+The native menu/history suite checks current-format/raw copying, asynchronous search, page navigation, bounded selection and deletion, text selection preservation, independently scrolling previews, right-column sizing, and persisted retention controls. Preferences and storage are isolated.
+
+The SQLite suite checks transactional JSON migration and rollback, interrupted cleanup recovery, corrupt source preservation, exact raw text, stable pagination, Unicode/literal search, retry deduplication, retention boundaries, idle expiry, never-delete mode and concurrent access. It exercises 1,200 additional imports without count eviction.
 
 Five installer checks cover fresh installation, whole-bundle updates, restoration on replacement failure, unrelated bundle rejection, and symlink rejection using temporary bundles.
 
@@ -52,3 +54,7 @@ Extract the ZIP and run its test/build scripts before uploading it. Attach both
 Keep this asset filename on every release: the landing page uses GitHub's
 `/releases/latest/download/pgn-clipboard-source.zip` redirect and does not query
 or cache a version-specific URL. Mark the published stable release as Latest.
+
+## Local review build
+
+Run `./app/scripts/preview.sh`. It builds a separate signed sandboxed app with bundle ID `design.pivnev.pgnclipboard.preview`, 125 synthetic PGNs, and its own preferences/history. The production app and history are not touched. Check both tabs, both copy buttons, text-selection copy, scrollbar/wheel behavior, search across pages, and retention. To exercise the watcher, choose a dedicated temporary folder and add a synthetic PGN after choosing it.

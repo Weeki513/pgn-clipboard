@@ -178,39 +178,6 @@ struct RecentImport: Codable {
     let clipboardText: String
 }
 
-/// All reads and atomic replacements share one lock. A failed write never changes memory.
-final class RecentImports {
-    static let defaultURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("PGN Clipboard/recent-imports.json")
-    private let url: URL
-    private let lock = NSLock()
-    init(url: URL = RecentImports.defaultURL) { self.url = url }
-    private func load() throws -> [RecentImport] {
-        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
-        return try JSONDecoder().decode([RecentImport].self, from: Data(contentsOf: url))
-    }
-    func entries() throws -> [RecentImport] {
-        lock.lock(); defer { lock.unlock() }
-        return Array(try load().prefix(10))
-    }
-    func record(_ entry: RecentImport) throws {
-        lock.lock(); defer { lock.unlock() }
-        var entries = try load()
-        entries.removeAll { $0.id == entry.id }
-        entries.insert(entry, at: 0)
-        try save(Array(entries.prefix(10)))
-    }
-    func remove(ids: Set<UUID>) throws {
-        lock.lock(); defer { lock.unlock() }
-        try save(load().filter { !ids.contains($0.id) })
-    }
-    private func save(_ entries: [RecentImport]) throws {
-        let data = try JSONEncoder().encode(entries)
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try data.write(to: url, options: .atomic)
-    }
-}
-
 final class Watcher {
     struct Observation {
         var stamp: FileStamp

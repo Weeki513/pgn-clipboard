@@ -2,13 +2,13 @@
 
 ![PGN Clipboard — download a chess game, paste its PGN](app/docs/images/banner.png)
 
-**Download a chess game. Paste its PGN.** A small macOS app that copies new PGN files to your clipboard, saves the last 10 imports locally, and optionally moves the originals to Trash.
+**Download a chess game. Paste its PGN.** A small macOS app that copies new PGN files to your clipboard, saves imports locally in SQLite without a count limit, and optionally moves the originals to Trash.
 
 If your routine is **download → find in Downloads → open in a text editor → copy → paste → delete**, this skips the middle steps. Download a new `.pgn`, wait a few seconds, then paste into your analysis tool or chat. Existing files are left alone; the original goes to recoverable Trash after history is saved and the clipboard write is verified, unless you turn that option off.
 
 [Product page](https://pivnev.design/pgn) · [Download source ZIP](https://github.com/Weeki513/pgn-clipboard/releases/latest/download/pgn-clipboard-source.zip)
 
-**New in 1.3:** the app window now has **Controls** and **Recent Imports** tabs. Browse PGN previews, copy saved imports, or delete entries individually or in bulk. The last 10 files remain available even after the originals are trashed. **Move original to Trash** starts on and can be disabled.
+**Local 1.4 preview:** unlimited SQLite history, search, disk usage, configurable retention, raw/current-format copying, and an ASCII interface with a floating metal clip. This build has not been published. Run `./app/scripts/preview.sh` for a separate preview app with synthetic games; it does not replace your installed app or migrate your production history.
 
 **Choose exactly what you paste.** Enable **Strip headers** to copy only the moves and annotations. Add **Auto headers** to label every game, including single-game files. Both options are in the pawn menu and Controls window.
 
@@ -34,17 +34,24 @@ If Finder blocks `Install.command`, open Terminal, type `cd `, drag the extracte
 
 ## Recent Imports & Trash
 
-Open the app window and select the **Recent Imports** tab, or choose **Manage Recent Imports…** from the pawn menu. Each card shows the filename, import timestamp, and a selectable, read-only preview of the original PGN. Previews show at most five lines at once; scroll vertically inside a preview to read the rest. The history list also scrolls independently. Click **Copy** to restore the saved clipboard text. The pawn menu keeps its quick-copy submenu too. The newest import is first; the last 10 imported files are kept across restarts. Each entry holds the complete original PGN and the exact formatted text captured on import. Copy restores that snapshot even if the original has been moved to Trash or deleted; changing header options later only affects new imports. A multi-game file occupies one entry.
+Open **Recent Imports** to search filenames or original PGN text (case-insensitive, including Unicode). Results are newest first, in pages of 50. Only row metadata is loaded for the list; select a row to load its full original into the independently scrollable preview. The summary shows total imports, matches, and storage used by the SQLite database plus its journal files. A multi-game file occupies one entry.
 
-**Delete** removes one saved import. Use the row checkboxes and **Delete Selected**, or **Select all**, to remove several. Deletion is permanent for those history entries, saves immediately, and never changes source files, Trash, or the current clipboard. An empty history shows a placeholder and disables selection actions.
+- **Copy formatted** applies the current **Strip headers / Auto headers** settings to the original, including whitespace normalization.
+- **Copy raw** copies the exact original, including all headers and whitespace.
+- Select any text in the preview and use **⌘C** or the standard context menu. **⌘A** selects the preview text when it has focus.
+- Select one row and **Delete (1)** to remove it; use **⌘-click / Shift-click** for several, or **Select page** for only the visible page. Deletion does not affect other pages, source files, Trash, or the clipboard.
 
-**Move original to Trash** is available in the menu and Controls, defaults **on**, and persists across restarts. Turn it off to keep originals in the watched folder. Successfully imported, unchanged files are not imported again or included in **Retry Failed Files**.
+The pawn menu retains shortcuts for the latest ten imports, with both copy modes. This is a menu limit, not a storage limit.
 
-History is saved atomically before clipboard and Trash operations. If saving fails, the clipboard and original stay untouched. If clipboard or Trash fails afterward, the saved entry remains available and retrying that file does not duplicate the entry. History is bounded to 10 entries: older entries are evicted as new imports arrive.
+In **Controls → Auto-delete history**, choose **Never** (default) or automatically remove imports older than **7, 30, 90, 180, or 365 days**. The choice saves immediately and removes existing expired records. Age is based on import time. Cleanup runs at launch, after imports, and once an hour while the app is running, including when watching is paused. Deletion is permanent. Freed database space is reused; the disk-size number may not shrink immediately.
+
+**Move original to Trash** starts on. Turning it off keeps source files in the selected folder. Successfully retained files do not import again until changed.
+
+History commits before clipboard/Trash operations. A failed history write leaves both untouched; clipboard/Trash retries reuse the same entry ID. On first launch of the normal updated app, legacy JSON imports migrate in a transaction. The JSON is retired only after a durable successful commit; corrupt JSON or failed migration remains intact and produces an error. No account or server is required.
 
 ## Strip headers & Auto headers
 
-Both options start **off**, and your choices persist across restarts. Changes apply to the next file processed; they do not rewrite a file or change text already on your clipboard.
+Both options start **off**, and your choices persist across restarts. Changes apply to the next file processed and the next Copy formatted action from history; they do not rewrite a file or change text already on your clipboard.
 
 | Strip headers | Auto headers | Clipboard output |
 | --- | --- | --- |
@@ -72,9 +79,9 @@ Whitespace between moves is collapsed to one space, with or without stripping. E
 
 Native application views with synthetic demonstration games; no personal PGNs are shown.
 
-![Recent Imports tab with five-line scrollable PGN previews, Copy, Delete, and bulk selection](app/docs/images/recent-imports.png)
+![SQLite history with search, paginated list and full PGN preview](app/docs/images/history-preview.png)
 
-![Controls tab with the Trash and header-formatting settings](app/docs/images/controls.png)
+![Controls tab with the Trash and header-formatting settings](app/docs/images/controls-preview.png)
 
 ## Controls
 
@@ -92,11 +99,11 @@ The controls window and menu include clickable author and feedback links. The fe
 - Supported files are UTF-8, at most 5 MiB, with `Event`, `White`, and `Black` headers and a final result token: `1-0`, `0-1`, `1/2-1/2`, or `*`. BOM and CRLF are accepted. This is conservative validation, not a full chess/PGN parser. Unsupported encodings, missing tags, or comments after the final result are left untouched.
 - The app saves history and verifies its clipboard write before requesting an optional native Trash operation. On copy or move failure, the source stays in place and an error appears. Use **Retry Failed Files** to retry.
 - Multiple arrivals are processed oldest first by modification time, with filename as a tie-breaker. **Only the latest processed file remains in the clipboard, including every game in that file.** Separate files do not accumulate in the clipboard; each import is saved in Recent Imports before the next one is processed.
-- Copying replaces the current clipboard; another app may change it afterward. PGN Clipboard stores only its own last 10 PGN imports, never clipboard contents from other apps.
+- Copying replaces the current clipboard; another app may change it afterward. PGN Clipboard stores only its own PGN imports, never clipboard contents from other apps.
 
 ## Update or uninstall
 
-Double-click **Uninstall.command**, or run `bash app/uninstall.sh`. The app stops, unregisters its login item, clears its saved folder settings, and is removed. Your PGN files and clipboard are not changed. The local Recent Imports file is retained in the sandbox container. To permanently erase saved PGN contents, remove `~/Library/Containers/design.pivnev.pgnclipboard/Data/Library/Application Support/PGN Clipboard/recent-imports.json` after quitting.
+Double-click **Uninstall.command**, or run `bash app/uninstall.sh`. The app stops, unregisters its login item, clears its saved folder settings, and is removed. Your PGN files and clipboard are not changed. The local history database is retained in the sandbox container. To permanently erase saved PGN contents, quit the app and remove the `PGN Clipboard` history directory under `~/Library/Containers/design.pivnev.pgnclipboard/Data/Library/Application Support/`, including any SQLite journal files or legacy JSON. The separate preview uses the `design.pivnev.pgnclipboard.preview` container.
 
 To update, run **Install.command** from the new package. It builds and verifies the new version before stopping and replacing the existing app. Your watched folder, settings, Recent Imports, and login-item registration are preserved. If macOS asks you to approve the updated login item, approve it in System Settings. Do not uninstall first. The installer refuses to replace a different or legacy app and restores the previous bundle if replacement fails.
 
@@ -129,7 +136,7 @@ The installed executable accepts `--login-status`, `--enable-login`, and `--disa
 
 ## Privacy and distribution
 
-The application is sandboxed. Access to the selected folder is saved as a security-scoped bookmark. Preferences contain that bookmark, pause state, Trash preference, and header-formatting preferences. The last 10 original PGNs and formatted copies are stored locally as JSON in the sandbox Application Support directory, with filenames and import timestamps. File contents are not logged; status and errors are kept in memory. There is no network entitlement. Clicking the author or feedback link explicitly opens the website or email handler outside the app.
+The application is sandboxed. Access to the selected folder is saved as a security-scoped bookmark. Preferences contain that bookmark, pause state, Trash preference, and header-formatting preferences. Original PGNs and import-time snapshots are stored locally in SQLite in the sandbox Application Support directory, with filenames and import timestamps. Retention defaults to unlimited; Controls contains the expiry settings. File contents are not logged; status and errors are kept in memory. There is no network entitlement. Clicking the author or feedback link explicitly opens the website or email handler outside the app.
 
 This is a **source distribution**, locally signed ad-hoc. It is not a notarized prebuilt release. A public prebuilt app needs Developer ID signing, notarization, and separate downloaded-artifact testing. Rebuilding with a different signing identity may require choosing the folder again. See the [testing guide](app/docs/TESTING.md) for the release checklist.
 

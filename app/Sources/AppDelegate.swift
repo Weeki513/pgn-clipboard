@@ -4,6 +4,9 @@ import ServiceManagement
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var item: NSStatusItem!
     private var timer: Timer?
+    private var cleanupTimer: Timer?
+    private var latestDetail: ImportDetailView?
+    private let historyQueue = DispatchQueue(label: "design.pivnev.pgnclipboard.maintenance", qos: .utility)
     private var watcher: Watcher?
     private var folder: URL?
     private var securityAccess = false
@@ -12,7 +15,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lastError: String?
     private var panelOpen = false
     private var controls: NSWindow?
-    private var tabs: NSTabView?
+    private var restoreWindowFrame: NSRect?
+    private var tabs: PageHostView?
+    private var controlsTabButton: ASCIIButton?
+    private var historyTabButton: ASCIIButton?
     private var recentView: RecentImportsView?
     private var statusLabel: NSTextField?
     private var folderLabel: NSTextField?
@@ -65,6 +71,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if CommandLine.arguments.contains("--uninstall") {
             prepareUninstall(); return
         }
+        configureEditMenu()
+        maintainHistory()
+        cleanupTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in self?.maintainHistory() }
+        cleanupTimer?.tolerance = 60
         paused = defaults.bool(forKey: "paused")
         if let data = defaults.data(forKey: "folderBookmark") {
             do {
@@ -75,7 +85,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if stale { try saveBookmark(url) }
             } catch { setError("Folder access needs renewal: \(error.localizedDescription)") }
         }
-        if watcher == nil { DispatchQueue.main.async { self.chooseFolder() } }
+        if watcher == nil {
+            DispatchQueue.main.async {
+                if Bundle.main.object(forInfoDictionaryKey: "PGNPreview") as? Bool == true {
+                    self.message = "Local preview / synthetic history / choose a test folder to try imports"
+                    self.showControls()
+                } else { self.chooseFolder() }
+            }
+        }
         timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             guard let self, !self.paused, !self.panelOpen else { return }
             do { try self.watcher?.scan() }
@@ -86,12 +103,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshStatus()
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if watcher == nil { chooseFolder() }
+        if watcher == nil && Bundle.main.object(forInfoDictionaryKey: "PGNPreview") as? Bool != true { chooseFolder() }
         else { DispatchQueue.main.async { self.showControls() } }
         return true
     }
     func applicationWillTerminate(_ notification: Notification) {
-        timer?.invalidate()
+        timer?.invalidate(); cleanupTimer?.invalidate()
         if securityAccess { folder?.stopAccessingSecurityScopedResource() }
     }
     private func setError(_ text: String) {
@@ -120,9 +137,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             if error { self.setError(text) }
             else { self.message = text; self.refreshStatus() }
-            self.recentView?.reload()
+            self.recentView?.reload(); self.refreshLatest()
         }
-        lastError = nil; message = "Watching \(url.lastPathComponent) · new PGN files only"
+        lastError = nil; message = "Watching \(url.lastPathComponent) / new PGN files only"
         refreshStatus()
     }
     @objc private func chooseFolder() {
@@ -154,13 +171,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let recent = NSMenuItem(title: "Recent Imports", action: nil, keyEquivalent: "")
         let recentMenu = NSMenu(); recentMenu.autoenablesItems = false
         do {
-            let entries = try history.entries()
+            let entries = try history.entries(limit: 10)
             let formatter = DateFormatter(); formatter.dateStyle = .short; formatter.timeStyle = .medium
             for entry in entries {
                 let row = NSMenuItem(title: "\(entry.filename) — \(formatter.string(from: entry.importedAt))", action: nil, keyEquivalent: "")
                 let actions = NSMenu(); actions.autoenablesItems = false
-                let copy = add(actions, "Copy", #selector(copyRecent(_:)))
-                copy.representedObject = entry.clipboardText
+                let copy = add(actions, "Copy formatted", #selector(copyRecentFormatted(_:)))
+                copy.representedObject = entry.original
+                let raw = add(actions, "Copy raw", #selector(copyRecent(_:)))
+                raw.representedObject = entry.original
                 row.submenu = actions; recentMenu.addItem(row)
             }
             if entries.isEmpty { recentMenu.addItem(withTitle: "No imports yet", action: nil, keyEquivalent: "").isEnabled = false }
@@ -196,6 +215,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @discardableResult private func add(_ menu: NSMenu, _ title: String, _ action: Selector) -> NSMenuItem {
         let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
         entry.target = self; menu.addItem(entry); return entry
+    }
+    @objc private func copyRecentFormatted(_ sender: NSMenuItem) {
+        guard let original = sender.representedObject as? String else { return }
+        let copy = NSMenuItem(); copy.representedObject = PGNFormatter.format(original, options: headerOptions)
+        _ = copyRecent(copy)
+    }
+    private func configureEditMenu() {
+        let menu = NSMenu()
+        let appItem = NSMenuItem(); let appMenu = NSMenu()
+        add(appMenu, "Quit PGN Clipboard", #selector(quit)).keyEquivalent = "q"
+        appItem.submenu = appMenu; menu.addItem(appItem)
+        let edit = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
+        let submenu = NSMenu(title: "Edit")
+        for (name, action, key) in [("Copy", #selector(NSText.copy(_:)), "c"), ("Select All", #selector(NSText.selectAll(_:)), "a"), ("Cut", #selector(NSText.cut(_:)), "x"), ("Paste", #selector(NSText.paste(_:)), "v")] {
+            submenu.addItem(withTitle: name, action: action, keyEquivalent: key)
+        }
+        edit.submenu = submenu; menu.addItem(edit); NSApp.mainMenu = menu
+    }
+    private func maintainHistory() {
+        historyQueue.async { [weak self] in
+            guard let self else { return }
+            do {
+                try self.history.maintenance()
+                DispatchQueue.main.async { self.recentView?.reload(); self.refreshLatest() }
+            } catch { DispatchQueue.main.async { self.setError("History: \(error.localizedDescription)") } }
+        }
+    }
+    private func refreshLatest() {
+        guard latestDetail != nil else { return }
+        historyQueue.async { [weak self] in
+            guard let self else { return }
+            do {
+                let entry = try self.history.entries(limit: 1).first
+                DispatchQueue.main.async { self.latestDetail?.show(entry) }
+            } catch { DispatchQueue.main.async { self.latestDetail?.feedback.stringValue = error.localizedDescription } }
+        }
     }
     @objc private func copyRecent(_ sender: NSMenuItem) -> Bool {
         guard let text = sender.representedObject as? String else { return false }
@@ -247,10 +302,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshStatus()
     }
     private func refreshStatus() {
+        latestDetail?.refreshPreview(); recentView?.detail.refreshPreview()
         item?.button?.title = ""
         item?.button?.image = StatusIcon.image(paused: paused, hasError: lastError != nil)
         item?.button?.toolTip = paused ? "PGN Clipboard — Paused" : "PGN Clipboard — \(message)"
-        statusLabel?.stringValue = paused ? "Paused. New files will stay in the folder." : message
+        statusLabel?.textColor = lastError != nil ? .systemRed : (watcher != nil && !paused ? ASCIIStyle.accent : .secondaryLabelColor)
+        statusLabel?.stringValue = paused ? "[ ] PAUSED - new files stay in the folder." : "[*] " + message
         folderLabel?.stringValue = folder?.path ?? "No folder selected"
         pauseButton?.title = paused ? "Resume" : "Pause"
         pauseButton?.isEnabled = watcher != nil
@@ -265,88 +322,148 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func restoreMenuIcon() { item.isVisible = true; refreshStatus() }
     @objc private func showControls() {
         if controls == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 640),
-                                  styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
-            window.title = "PGN Clipboard"
-            window.isReleasedWhenClosed = false
-            let tabs = NSTabView(frame: window.contentView!.bounds.insetBy(dx: 16, dy: 16))
-            tabs.autoresizingMask = [.width, .height]
-            window.contentView!.addSubview(tabs); self.tabs = tabs
-            let settings = NSTabViewItem(identifier: "controls"); settings.label = "Controls"
-            let container = NSView(); settings.view = container; tabs.addTabViewItem(settings)
-            let imports = NSTabViewItem(identifier: "recent"); imports.label = "Recent Imports"
+            let window = ClipboardWindow(contentRect: NSRect(x: 0, y: 0, width: 1080, height: 690),
+                styleMask: [.borderless, .resizable, .miniaturizable], backing: .buffered, defer: false)
+            window.title = Bundle.main.object(forInfoDictionaryKey: "PGNPreview") as? Bool == true ? "PGN Clipboard - ASCII Preview" : "PGN Clipboard"
+            window.isReleasedWhenClosed = false; window.minSize = NSSize(width: 1000, height: 650)
+            window.appearance = NSAppearance(named: .darkAqua); window.backgroundColor = ASCIIStyle.paper
+            window.hasShadow = true
+            let board = BoardView(frame: window.contentView!.bounds); board.autoresizingMask = [.width, .height]; window.contentView = board
+            NSLayoutConstraint.activate([
+                board.widthAnchor.constraint(greaterThanOrEqualToConstant: 1000),
+                board.heightAnchor.constraint(greaterThanOrEqualToConstant: 650)
+            ])
+            window.contentMinSize = NSSize(width: 1000, height: 650)
+            let drag = WindowDragArea(); drag.translatesAutoresizingMaskIntoConstraints = false; board.addSubview(drag)
+            let windowActions = NSStackView(); windowActions.orientation = .horizontal; windowActions.spacing = 0
+            for (title, action, label) in [("x", #selector(closeWindow), "Close window"), ("_", #selector(minimizeWindow), "Minimize window"), ("+", #selector(zoomWindow), "Resize window")] {
+                let button = ASCIIButton(title: title, target: self, action: action); button.font = ASCIIStyle.font()
+                button.setAccessibilityLabel(label)
+                if title == "x" { button.keyEquivalent = "w"; button.keyEquivalentModifierMask = .command }
+                if title == "_" { button.keyEquivalent = "m"; button.keyEquivalentModifierMask = .command }
+                windowActions.addArrangedSubview(button)
+            }
+            windowActions.translatesAutoresizingMaskIntoConstraints = false; board.addSubview(windowActions)
+            let heading = NSTextField(labelWithString: Self.asciiTitle)
+            heading.font = ASCIIStyle.font(); heading.textColor = ASCIIStyle.ink
+            heading.translatesAutoresizingMaskIntoConstraints = false; board.addSubview(heading)
+            let tagline = NSTextField(labelWithString: "Small games. A bigger tomorrow.")
+            tagline.font = ASCIIStyle.font(); tagline.textColor = ASCIIStyle.dim
+            tagline.translatesAutoresizingMaskIntoConstraints = false; board.addSubview(tagline)
+            let version = NSTextField(labelWithString: "LOCAL / OFFLINE  |  v" + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"))
+            version.font = ASCIIStyle.font(); version.textColor = ASCIIStyle.dim
+            version.translatesAutoresizingMaskIntoConstraints = false; board.addSubview(version)
+            let nav = NSStackView(); nav.orientation = .horizontal; nav.spacing = 14; nav.translatesAutoresizingMaskIntoConstraints = false
+            let controlTab = ASCIIButton(title: "CONTROLS", target: self, action: #selector(selectControlsTab))
+            let historyTab = ASCIIButton(title: "RECENT IMPORTS", target: self, action: #selector(selectHistoryTab))
+            controlTab.persistentSelection = true; historyTab.persistentSelection = true
+            nav.addArrangedSubview(controlTab); nav.addArrangedSubview(historyTab); board.addSubview(nav)
+            controlsTabButton = controlTab; historyTabButton = historyTab
+            let tabs = PageHostView()
+            tabs.translatesAutoresizingMaskIntoConstraints = false; board.addSubview(tabs); self.tabs = tabs
+            NSLayoutConstraint.activate([
+                drag.leadingAnchor.constraint(equalTo: board.leadingAnchor, constant: 12), drag.trailingAnchor.constraint(equalTo: board.trailingAnchor, constant: -12),
+                drag.topAnchor.constraint(equalTo: board.topAnchor, constant: 12), drag.heightAnchor.constraint(equalToConstant: 112),
+                windowActions.leadingAnchor.constraint(equalTo: board.leadingAnchor, constant: 16), windowActions.topAnchor.constraint(equalTo: board.topAnchor, constant: 12),
+                heading.leadingAnchor.constraint(equalTo: board.leadingAnchor, constant: 30), heading.topAnchor.constraint(equalTo: board.topAnchor, constant: 43),
+                tagline.leadingAnchor.constraint(equalTo: heading.leadingAnchor), tagline.topAnchor.constraint(equalTo: heading.bottomAnchor, constant: 7),
+                version.trailingAnchor.constraint(equalTo: board.trailingAnchor, constant: -24), version.topAnchor.constraint(equalTo: board.topAnchor, constant: 22),
+                nav.leadingAnchor.constraint(equalTo: board.leadingAnchor, constant: 24), nav.topAnchor.constraint(equalTo: board.topAnchor, constant: 155),
+                tabs.leadingAnchor.constraint(equalTo: board.leadingAnchor, constant: 18), tabs.trailingAnchor.constraint(equalTo: board.trailingAnchor, constant: -18),
+                tabs.topAnchor.constraint(equalTo: nav.bottomAnchor, constant: 8), tabs.bottomAnchor.constraint(equalTo: board.bottomAnchor, constant: -24)
+            ])
+            let container = NSView(); tabs.addPage(container, identifier: "controls")
             let recent = RecentImportsView(history: history)
             recent.copyText = { [weak self] text in
-                let sender = NSMenuItem(); sender.representedObject = text
-                return self?.copyRecent(sender) ?? false
+                let sender = NSMenuItem(); sender.representedObject = text; return self?.copyRecent(sender) ?? false
             }
-            imports.view = recent; tabs.addTabViewItem(imports); recentView = recent
-            let stack = NSStackView()
-            stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 16
-            stack.translatesAutoresizingMaskIntoConstraints = false
-            container.addSubview(stack)
+            recent.options = { [weak self] in self?.headerOptions ?? HeaderOptions() }
+            tabs.addPage(recent, identifier: "recent"); recentView = recent
+            let latest = ImportDetailView(); latest.isLatest = true; latest.trashEnabled = { [weak self] in self?.moveOriginalToTrash ?? false }; latest.options = recent.options; latest.copyText = recent.copyText; latestDetail = latest
+            latest.translatesAutoresizingMaskIntoConstraints = false; container.addSubview(latest)
+            let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 6
+            stack.translatesAutoresizingMaskIntoConstraints = false; container.addSubview(stack)
             NSLayoutConstraint.activate([
-                stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 24),
-                stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -24),
-                stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 24)
+                stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12), stack.widthAnchor.constraint(equalTo: container.widthAnchor, multiplier: 0.44),
+                stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 8), stack.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor, constant: -4),
+                latest.leadingAnchor.constraint(equalTo: stack.trailingAnchor, constant: 14), latest.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
+                latest.topAnchor.constraint(equalTo: container.topAnchor), latest.bottomAnchor.constraint(equalTo: container.bottomAnchor)
             ])
-            let title = NSTextField(labelWithString: "Download a game. Paste its PGN.")
-            title.font = .systemFont(ofSize: 20, weight: .semibold)
-            stack.addArrangedSubview(title)
-            let status = NSTextField(wrappingLabelWithString: message)
-            status.font = .systemFont(ofSize: 13)
-            status.maximumNumberOfLines = 4
-            stack.addArrangedSubview(status); statusLabel = status
-            status.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-            let path = NSTextField(wrappingLabelWithString: "")
-            path.textColor = .secondaryLabelColor; path.font = .systemFont(ofSize: 12)
-            path.maximumNumberOfLines = 2; path.lineBreakMode = .byTruncatingMiddle
-            stack.addArrangedSubview(path); folderLabel = path
-            path.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-            let row = NSStackView(); row.orientation = .horizontal; row.spacing = 8
-            row.addArrangedSubview(NSButton(title: "Choose Folder…", target: self, action: #selector(chooseFolder)))
-            let pause = NSButton(title: "Pause", target: self, action: #selector(togglePause))
-            row.addArrangedSubview(pause); pauseButton = pause
-            row.addArrangedSubview(NSButton(title: "Retry Failed Files", target: self, action: #selector(retry)))
-            stack.addArrangedSubview(row)
-            let trash = NSButton(checkboxWithTitle: "Move original to Trash", target: self, action: #selector(toggleTrash))
-            stack.addArrangedSubview(trash); trashButton = trash
-            let strip = NSButton(checkboxWithTitle: "Strip headers", target: self, action: #selector(toggleStripHeaders))
-            stack.addArrangedSubview(strip); stripButton = strip
-            let auto = NSButton(checkboxWithTitle: "Auto headers", target: self, action: #selector(toggleAutoHeaders))
-            stack.addArrangedSubview(auto); autoButton = auto
-            let login = NSButton(checkboxWithTitle: "Launch at Login", target: self, action: #selector(toggleLogin))
-            stack.addArrangedSubview(login); loginButton = login
-            let hint = NSTextField(wrappingLabelWithString: "Look for the pawn in the menu bar. If the bar is crowded, you can always reopen this app to access these controls.")
-            hint.textColor = .secondaryLabelColor; hint.font = .systemFont(ofSize: 12)
-            stack.addArrangedSubview(hint)
-            hint.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-            let bottom = NSStackView(); bottom.orientation = .horizontal; bottom.spacing = 8
-            bottom.addArrangedSubview(NSButton(title: "Show Menu Bar Icon", target: self, action: #selector(restoreMenuIcon)))
-            bottom.addArrangedSubview(NSButton(title: "Quit", target: self, action: #selector(quit)))
-            stack.addArrangedSubview(bottom)
-            let credit = NSButton(title: "Made with love by pivnev.design", target: self, action: #selector(openWebsite))
-            credit.bezelStyle = .inline; credit.isBordered = false
-            credit.contentTintColor = .linkColor
-            credit.font = .systemFont(ofSize: 13, weight: .semibold)
-            credit.toolTip = "https://www.pivnev.design/"
-            stack.addArrangedSubview(credit)
-            let feedback = NSButton(title: "Feedback: hi@pivnev.design", target: self, action: #selector(openFeedback))
-            feedback.bezelStyle = .inline; feedback.isBordered = false
-            feedback.contentTintColor = .linkColor
-            feedback.font = .systemFont(ofSize: 13)
-            feedback.toolTip = "mailto:hi@pivnev.design"
-            stack.addArrangedSubview(feedback)
-            window.center(); controls = window
+            let status = NSTextField(wrappingLabelWithString: message); status.font = ASCIIStyle.font(); status.maximumNumberOfLines = 2
+            stack.addArrangedSubview(status); statusLabel = status; status.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+            let path = NSTextField(labelWithString: ""); path.font = ASCIIStyle.font(); path.textColor = ASCIIStyle.dim; path.lineBreakMode = .byTruncatingMiddle
+            stack.addArrangedSubview(path); folderLabel = path; path.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+            let row = NSStackView(); row.orientation = .horizontal; row.spacing = 6
+            row.addArrangedSubview(ASCIIButton(title: "Choose folder", target: self, action: #selector(chooseFolder)))
+            let pause = ASCIIButton(title: "Pause", target: self, action: #selector(togglePause)); row.addArrangedSubview(pause); pauseButton = pause
+            row.addArrangedSubview(ASCIIButton(title: "Open folder", target: self, action: #selector(openFolder))); stack.addArrangedSubview(row)
+            let trash = ASCIIButton(checkboxWithTitle: "Move original to Trash", target: self, action: #selector(toggleTrash)); stack.addArrangedSubview(trash); trashButton = trash
+            let strip = ASCIIButton(checkboxWithTitle: "Strip headers", target: self, action: #selector(toggleStripHeaders)); stack.addArrangedSubview(strip); stripButton = strip
+            let auto = ASCIIButton(checkboxWithTitle: "Auto headers", target: self, action: #selector(toggleAutoHeaders)); stack.addArrangedSubview(auto); autoButton = auto
+            let login = ASCIIButton(checkboxWithTitle: "Launch at Login", target: self, action: #selector(toggleLogin)); stack.addArrangedSubview(login); loginButton = login
+            let retention = HistorySettingsView(history: history)
+            retention.didChange = { [weak self] in self?.recentView?.reload(); self?.refreshLatest() }
+            stack.addArrangedSubview(retention); retention.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+            let tools = NSStackView(); tools.orientation = .horizontal; tools.spacing = 4
+            for (title, action) in [("Retry files", #selector(retry)), ("Quit", #selector(quit))] {
+                let button = ASCIIButton(title: title, target: self, action: action); button.font = ASCIIStyle.font(); tools.addArrangedSubview(button)
+            }
+            stack.addArrangedSubview(tools)
+            let credit = ASCIIButton(title: "Made with love by pivnev.design", target: self, action: #selector(openWebsite)); credit.font = ASCIIStyle.font()
+            let feedback = ASCIIButton(title: "Feedback: hi@pivnev.design", target: self, action: #selector(openFeedback)); feedback.font = ASCIIStyle.font()
+            let links = NSStackView(); links.orientation = .vertical; links.alignment = .leading; links.addArrangedSubview(credit); links.addArrangedSubview(feedback); stack.addArrangedSubview(links)
+            controls = window; selectControlsTab()
+            window.center()
+            if let screen = window.screen {
+                var frame = window.frame
+                frame.origin.y = min(frame.origin.y, screen.visibleFrame.maxY - frame.height - 115)
+                frame.origin.y = max(screen.visibleFrame.minY + 8, frame.origin.y)
+                window.setFrame(frame, display: false)
+            }
+            window.attachClip()
         }
-        refreshStatus()
-        NSApp.activate(ignoringOtherApps: true)
-        recentView?.reload()
+        refreshStatus(); NSApp.activate(ignoringOtherApps: true)
+        recentView?.reload(); refreshLatest()
+        if controls?.isMiniaturized == true { controls?.deminiaturize(nil) }
         controls?.makeKeyAndOrderFront(nil)
+        (controls as? ClipboardWindow)?.showClip()
     }
-    @objc private func showRecentImports() {
-        showControls(); tabs?.selectTabViewItem(withIdentifier: "recent")
+    @objc private func selectControlsTab() {
+        tabs?.selectPage( "controls"); controlsTabButton?.state = .on; historyTabButton?.state = .off
     }
+    @objc private func selectHistoryTab() {
+        tabs?.selectPage( "recent"); controlsTabButton?.state = .off; historyTabButton?.state = .on
+    }
+    @objc private func showRecentImports() { showControls(); selectHistoryTab() }
+    @objc private func closeWindow() { controls?.orderOut(nil); (controls as? ClipboardWindow)?.clipPanel?.orderOut(nil) }
+    @objc private func minimizeWindow() { controls?.miniaturize(nil) }
+    @objc private func zoomWindow() {
+        guard let window = controls, let screen = window.screen else { return }
+        let area = screen.visibleFrame.insetBy(dx: 16, dy: 16)
+        if let original = restoreWindowFrame {
+            window.setFrame(original, display: true); restoreWindowFrame = nil
+        } else {
+            restoreWindowFrame = window.frame
+            window.setFrame(NSRect(x: area.minX, y: area.minY, width: area.width, height: max(650, area.height - 107)), display: true)
+        }
+    }
+    @objc private func openFolder() { if let folder { NSWorkspace.shared.open(folder) } }
+    private static let asciiTitle: String = {
+        let glyphs: [Character: [String]] = [
+            "P": [" ____  ", "|  _ \\ ", "| |_) |", "|  __/ ", "|_|    "],
+            "G": ["  ____ ", " / ___|", "| |  _ ", "| |_| |", " \\____|"],
+            "N": [" _   _ ", "| \\ | |", "|  \\| |", "| |\\  |", "|_| \\_|"],
+            "C": ["  ____ ", " / ___|", "| |    ", "| |___ ", " \\____|"],
+            "L": [" _     ", "| |    ", "| |    ", "| |___ ", "|_____|"],
+            "I": [" ___ ", "|_ _|", " | | ", " | | ", "|___|"],
+            "B": [" ____  ", "| __ ) ", "|  _ \\ ", "| |_) |", "|____/ "],
+            "O": ["  ___  ", " / _ \\ ", "| | | |", "| |_| |", " \\___/ "],
+            "A": ["    _    ", "   / \\   ", "  / _ \\  ", " / ___ \\ ", "/_/   \\_\\"],
+            "R": [" ____  ", "|  _ \\ ", "| |_) |", "|  _ < ", "|_| \\_\\"],
+            "D": [" ____  ", "|  _ \\ ", "| | | |", "| |_| |", "|____/ "], " ": Array(repeating: "   ", count: 5)
+        ]
+        return (0..<5).map { row in "PGN CLIPBOARD".map { glyphs[$0]![row] }.joined(separator: " ") }.joined(separator: "\n")
+    }()
     @objc private func openWebsite() {
         NSWorkspace.shared.open(URL(string: "https://www.pivnev.design/")!)
     }
@@ -360,8 +477,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     @objc private func about() {
         NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert(); alert.messageText = "PGN Clipboard 1.3.0"
-        alert.informativeText = "Download a game. Paste its PGN.\n\nNew .pgn files are copied after at least 3 seconds without changes, saved in Recent Imports, then optionally moved to Trash. Recopy any of the last 10 imports from the menu.\n\nNo network access. No analytics. No Full Disk Access."
+        let alert = NSAlert(); alert.messageText = "PGN Clipboard " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
+        alert.informativeText = "WATCH. IMPORT. CLEAN. COPY.\n\nNew .pgn files are copied after at least 3 seconds without changes, saved in Recent Imports, then optionally moved to Trash. Search your local history and copy originals or apply your current formatting. History retention is configurable in Controls.\n\nNo network access. No analytics. No Full Disk Access."
         alert.runModal()
     }
     @objc private func reset() {
@@ -389,4 +506,3 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     @objc private func quit() { NSApp.terminate(nil) }
 }
-

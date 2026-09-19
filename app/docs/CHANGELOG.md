@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.4.0 — local preview, not published
+
+- Replace the ten-entry JSON store with SQLite and transactional migration.
+- Add background search, 50-row pages, on-demand originals, and disk usage.
+- Add never-delete or age-based retention with startup/import/hourly cleanup.
+- Copy using current formatting or copy the exact raw source; support native text selection and copy.
+- Draw the app interface with ASCII frames, buttons, tabs, checkboxes and scrollbars; keep native keyboard and text selection behavior.
+- Attach the supplied metal clip as a transparent child panel extending outside the window. Merge retention settings into Controls.
+- Replace nested preview cards with a native scrolling list and full-height preview.
+- Refresh the dark macOS window using the supplied clipboard asset and monospaced typography.
+- Add an isolated preview build with synthetic history for review before release.
+
 ## 1.3.2
 
 - Let Install.command update an existing native app without uninstalling or resetting settings, folder access, history, or login registration.

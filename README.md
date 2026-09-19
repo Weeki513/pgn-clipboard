@@ -79,9 +79,9 @@ Whitespace between moves is collapsed to one space, with or without stripping. E
 
 Native application views with synthetic demonstration games; no personal PGNs are shown.
 
-![SQLite history with search, paginated list and full PGN preview](app/docs/images/history-preview.png)
+![SQLite history with search, paginated list and full PGN preview](app/docs/images/history-preview.webp)
 
-![Controls tab with the Trash and header-formatting settings](app/docs/images/controls-preview.png)
+![Controls tab with the Trash and header-formatting settings](app/docs/images/controls-preview.webp)
 
 ## Controls
 
